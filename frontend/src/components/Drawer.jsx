@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import { useLang } from '../lang.jsx';
 
 const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])';
@@ -13,6 +14,7 @@ const FOCUSABLE =
  * opened it; locks the page scroll meanwhile.
  */
 export default function Drawer({ open, onClose, labelledBy, header, children }) {
+  const { t } = useLang();
   const reduceMotion = useReducedMotion();
   const panelRef = useRef(null);
   const closeRef = useRef(null);
@@ -95,7 +97,7 @@ export default function Drawer({ open, onClose, labelledBy, header, children }) 
             <div className="drawer-head">
               <div className="min-w-0">{header}</div>
               <button ref={closeRef} type="button" className="drawer-close link" onClick={onClose}>
-                Fermer
+                {t.close}
               </button>
             </div>
             {children}

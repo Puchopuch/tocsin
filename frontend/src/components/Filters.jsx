@@ -1,15 +1,17 @@
-import { LEVELS, SEVERITY } from '../lib/severity.js';
+import { useLang } from '../lang.jsx';
+import { LEVEL_NAMES, LEVELS } from '../lib/severity.js';
 
 /**
  * Tabs with their counts, underlined when active, and "Grand public uniquement" on the right.
  * Counts follow the search and the checkbox, not the tab.
  */
 export default function Filters({ severity, onSeverityChange, counts, publicOnly, onPublicOnlyChange }) {
-  const tabs = [{ key: 'toutes', label: 'Toutes' }, ...LEVELS.map((level) => ({ key: level, label: SEVERITY[level].label }))];
+  const { lang, t } = useLang();
+  const tabs = [{ key: 'toutes', label: t.all }, ...LEVELS.map((level) => ({ key: level, label: LEVEL_NAMES[lang][level].label }))];
 
   return (
     <div className="page filters">
-      <div role="group" aria-label="Filtrer par gravité" className="tabs">
+      <div role="group" aria-label={t.filterBySeverity} className="tabs">
         {tabs.map((tab) => (
           <button
             key={tab.key}
@@ -25,7 +27,7 @@ export default function Filters({ severity, onSeverityChange, counts, publicOnly
 
       <label className="public-only">
         <input type="checkbox" checked={publicOnly} onChange={(event) => onPublicOnlyChange(event.target.checked)} />
-        Grand public uniquement
+        {t.publicOnly}
       </label>
     </div>
   );

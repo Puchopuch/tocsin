@@ -1,4 +1,5 @@
-import { SEVERITY } from '../lib/severity.js';
+import { useLang } from '../lang.jsx';
+import { LEVEL_NAMES, SEVERITY } from '../lib/severity.js';
 
 /** The 10px square in the level's colour. Decorative: the level is always written next to it. */
 export function Square({ level }) {
@@ -13,11 +14,12 @@ export function Square({ level }) {
 
 /** First line of a card: square, level in black, short date and, if any, an unconfirmed status. */
 export function Meta({ level, date, dateTime, title, status }) {
+  const { lang } = useLang();
   return (
     <p className="meta">
       <span className="meta__level">
         <Square level={level} />
-        {SEVERITY[level].label}
+        {LEVEL_NAMES[lang][level].label}
       </span>
       <time className="meta__date" dateTime={dateTime} title={title}>
         {date}

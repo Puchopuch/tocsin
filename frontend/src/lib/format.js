@@ -1,6 +1,7 @@
-// Formatting helpers: dates the French way, search, people and sources, safe links.
+// Formatting helpers, in French and in English: dates, search, people and sources, safe links.
 // They only shape what is displayed; they never change the data.
 
+import { UI } from './i18n.js';
 import { STATUS } from './severity.js';
 
 const NBSP = ' ';
@@ -16,13 +17,26 @@ export function windowStart(now) {
   return start;
 }
 
-/** What a card shows when a piece of information is missing: the line stays. */
-export const NOT_GIVEN = 'Non communiqué';
+const FORMATS = {};
 
-const DAY_MONTH = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short' });
-const DAY_MONTH_YEAR = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
-const LONG_DAY = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
-const WEEKDAY = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+/** The date formats of a language, made once. */
+function formats(lang) {
+  if (!FORMATS[lang]) {
+    const locale = UI[lang].locale;
+    FORMATS[lang] = {
+      dayMonth: new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short' }),
+      dayMonthYear: new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', year: 'numeric' }),
+      longDay: new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'long', year: 'numeric' }),
+      weekday: new Intl.DateTimeFormat(locale, { weekday: 'long', day: 'numeric', month: 'long' }),
+    };
+  }
+  return FORMATS[lang];
+}
+
+const WORDS = {
+  fr: { today: 'aujourd’hui', yesterday: 'hier', at: 'à', on: 'le' },
+  en: { today: 'today', yesterday: 'yesterday', at: 'at', on: 'on' },
+};
 
 const sameDay = (a, b) =>
   a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
@@ -33,14 +47,16 @@ const isYesterday = (date, now) => {
   return sameDay(date, yesterday);
 };
 
-/** "07 h 42" (padded, for cards) or "7 h 42" (for sentences). */
-export function clock(date, { pad = false } = {}) {
+/** "07 h 42" (padded, for cards) or "7 h 42" in French; "07:42" in English. */
+export function clock(date, lang = 'fr', { pad = false } = {}) {
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  if (lang === 'en') return `${String(date.getHours()).padStart(2, '0')}:${minutes}`;
   const hours = String(date.getHours());
-  return `${pad ? hours.padStart(2, '0') : hours}${NBSP}h${NBSP}${String(date.getMinutes()).padStart(2, '0')}`;
+  return `${pad ? hours.padStart(2, '0') : hours}${NBSP}h${NBSP}${minutes}`;
 }
 
-const dayMonth = (date, now) =>
-  (date.getFullYear() === new Date(now).getFullYear() ? DAY_MONTH : DAY_MONTH_YEAR).format(date);
+const dayMonth = (date, now, lang) =>
+  (date.getFullYear() === new Date(now).getFullYear() ? formats(lang).dayMonth : formats(lang).dayMonthYear).format(date);
 
 // A date marked `dayOnly` (see hooks.js) came from a source that gives no time: no hour is ever
 // shown for it, so that nothing is invented.
@@ -52,31 +68,36 @@ export function machineDate(date) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
-/** Short date of a card: "07 h 42" today ("aujourd’hui" without a time), "hier", or "18 nov.". */
-export function cardDate(date, now) {
-  if (sameDay(date, new Date(now))) return date.dayOnly ? 'aujourd’hui' : clock(date, { pad: true });
-  if (isYesterday(date, now)) return 'hier';
-  return dayMonth(date, now);
+/** Short date of a card: the time today ("aujourd’hui" / "today" without a time), yesterday, or "18 nov." / "18 Nov". */
+export function cardDate(date, now, lang = 'fr') {
+  const words = WORDS[lang];
+  if (sameDay(date, new Date(now))) return date.dayOnly ? words.today : clock(date, lang, { pad: true });
+  if (isYesterday(date, now)) return words.yesterday;
+  return dayMonth(date, now, lang);
 }
 
-/** "à 7 h 42", "hier à 23 h 10" or "le 18 nov. à 7 h 42", after "Mis à jour". */
-export function updatedAt(date, now) {
-  if (sameDay(date, new Date(now))) return `à ${clock(date)}`;
-  if (isYesterday(date, now)) return `hier à ${clock(date)}`;
-  return `le ${dayMonth(date, now)} à ${clock(date)}`;
+/** After "Mis à jour" / "Updated": "à 7 h 42" / "at 07:42", "hier à …", "le 18 nov. à …". */
+export function updatedAt(date, now, lang = 'fr') {
+  const words = WORDS[lang];
+  if (sameDay(date, new Date(now))) return `${words.at} ${clock(date, lang)}`;
+  if (isYesterday(date, now)) return `${words.yesterday} ${words.at} ${clock(date, lang)}`;
+  return `${words.on} ${dayMonth(date, now, lang)} ${words.at} ${clock(date, lang)}`;
 }
 
-/** "20 novembre 2026 à 7 h 42", or "20 novembre 2026" without a time. */
-export const fullDate = (date) => (date.dayOnly ? LONG_DAY.format(date) : `${LONG_DAY.format(date)} à ${clock(date)}`);
+/** "20 novembre 2026 à 7 h 42" / "20 November 2026 at 07:42", or the day alone. */
+export function fullDate(date, lang = 'fr') {
+  const day = formats(lang).longDay.format(date);
+  return date.dayOnly ? day : `${day} ${WORDS[lang].at} ${clock(date, lang)}`;
+}
 
-/** "16 nov. à 14 h 10", or "16 nov." without a time, for the timeline. */
-export const timelineDate = (date, now) => (date.dayOnly ? dayMonth(date, now) : `${dayMonth(date, now)} à ${clock(date)}`);
+/** "16 nov. à 14 h 10" / "16 Nov at 14:10", or the day alone, for the timeline. */
+export function timelineDate(date, now, lang = 'fr') {
+  const day = dayMonth(date, now, lang);
+  return date.dayOnly ? day : `${day} ${WORDS[lang].at} ${clock(date, lang)}`;
+}
 
-/** "Vendredi 20 novembre". */
-export const todayLabel = (now) => capitalize(WEEKDAY.format(now));
-
-/** "1 attaque", "2 attaques". In French, 0 and 1 take the singular. */
-export const plural = (count, one, many) => `${count}${NBSP}${count > 1 ? many : one}`;
+/** "Vendredi 20 novembre" / "Friday 20 November". */
+export const todayLabel = (now, lang = 'fr') => capitalize(formats(lang).weekday.format(now));
 
 export const capitalize = (text) => text.charAt(0).toUpperCase() + text.slice(1);
 
@@ -133,34 +154,37 @@ export function matchesQuery(attack, query) {
 // ---- People and sources ---------------------------------------------------------------------
 
 /**
- * "Origine" of a card: the attacker's name (with the country when a reliable source gives one),
- * "Inconnue" when nobody is known, "Non communiqué" when the feed says nothing; plus the
- * status, only when it is not confirmed.
+ * "Origine" / "Origin" of a card: the attacker's name (with the country when a reliable source
+ * gives one), "Inconnue" / "Unknown" when nobody is known, "Non communiqué" / "Not disclosed" when
+ * the feed says nothing; plus the status, only when it is not confirmed.
  */
-export function origin(attacker) {
-  if (!attacker) return { value: NOT_GIVEN, status: null };
-  if (attacker.status === 'inconnu') return { value: 'Inconnue', status: null };
-  const name = attacker.name || NOT_GIVEN;
+export function origin(attacker, lang = 'fr') {
+  const t = UI[lang];
+  if (!attacker) return { value: t.notGiven, status: null };
+  if (attacker.status === 'inconnu') return { value: t.unknownOrigin, status: null };
+  const name = attacker.name || t.notGiven;
   const value = attacker.country ? `${name} (${attacker.country})` : name;
-  const unconfirmed = STATUS[attacker.status]?.unconfirmed;
-  return { value, status: unconfirmed ? `${unconfirmed}${attacker.source ? `, selon ${attacker.source}` : ''}` : null };
+  const unconfirmed = STATUS[attacker.status]?.[lang].unconfirmed;
+  return { value, status: unconfirmed ? `${unconfirmed}${attacker.source ? `, ${t.according(attacker.source)}` : ''}` : null };
 }
 
-/** "Cibles" of a card, with "Revendiqué, non confirmé" when only the attackers say so. */
-export const targets = (victim) => ({
-  value: victim?.label || NOT_GIVEN,
-  status: STATUS[victim?.status]?.unconfirmed ?? null,
+/** "Cibles" / "Targets" of a card, with the status when only the attackers say so. */
+export const targets = (victim, lang = 'fr') => ({
+  value: victim?.label || UI[lang].notGiven,
+  status: STATUS[victim?.status]?.[lang].unconfirmed ?? null,
 });
 
 /** Official sources first, the others in their original order. */
 export const orderSources = (sources = []) =>
   [...sources].sort((a, b) => Number(b.official) - Number(a.official));
 
-/** "Sources : CISA, NVD, CERT-FR", or "Source : ransomware.live". */
-export function sourcesLine(sources = []) {
-  if (sources.length === 0) return `Sources${NBSP}: ${NOT_GIVEN.toLowerCase()}`;
+/** "Sources : CISA, NVD" in French, "Sources: CISA, NVD" in English; "Source" for one. */
+export function sourcesLine(sources = [], lang = 'fr') {
+  const t = UI[lang];
+  const colon = lang === 'fr' ? `${NBSP}: ` : ': ';
+  if (sources.length === 0) return `${t.sources}${colon}${t.notGiven.toLowerCase()}`;
   const names = [...new Set(orderSources(sources).map((source) => source.name))];
-  return `${names.length > 1 ? 'Sources' : 'Source'}${NBSP}: ${names.join(', ')}`;
+  return `${names.length > 1 ? t.sources : t.source}${colon}${names.join(', ')}`;
 }
 
 // ---- Links ----------------------------------------------------------------------------------

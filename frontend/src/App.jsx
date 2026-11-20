@@ -6,9 +6,10 @@ import Filters from './components/Filters.jsx';
 import Header from './components/Header.jsx';
 import MethodDrawer from './components/MethodDrawer.jsx';
 import { APP_NAME } from './config.js';
-import { useAttacks, useNow, useStored } from './hooks.js';
+import { localize, useAttacks, useNow, useStored } from './hooks.js';
+import { useLang } from './lang.jsx';
 import { digest } from './lib/digest.js';
-import { matchesQuery, plural, todayLabel, windowStart } from './lib/format.js';
+import { matchesQuery, todayLabel, windowStart } from './lib/format.js';
 import { LEVELS } from './lib/severity.js';
 
 const ALL = 'toutes';
@@ -48,9 +49,17 @@ function arrange(cards, severity) {
 }
 
 export default function App() {
-  const { status, attacks, generatedAt } = useAttacks();
+  const { lang, t } = useLang();
+  const feed = useAttacks();
+  const { status, generatedAt } = feed;
+  // The cards in the language chosen; both languages stay in the feed.
+  const attacks = useMemo(() => localize(feed.attacks, lang), [feed.attacks, lang]);
   const now = useNow();
   const searchRef = useRef(null);
+
+  useEffect(() => {
+    document.title = t.title(APP_NAME);
+  }, [t]);
 
   const [severity, setSeverity] = useState(ALL);
   const [query, setQuery] = useState('');
@@ -76,7 +85,7 @@ export default function App() {
     return result;
   }, [scoped]);
 
-  const summary = useMemo(() => digest(scoped, now), [scoped, now]);
+  const summary = useMemo(() => digest(scoped, now, lang), [scoped, now, lang]);
   const layout = useMemo(() => arrange(scoped, severity), [scoped, severity]);
   const shown = (layout.une ? 1 : 0) + layout.serious.length + layout.significant.length + layout.minor.length;
 
@@ -113,12 +122,9 @@ export default function App() {
   useEffect(() => {
     if (lastFilters.current === filters) return undefined;
     lastFilters.current = filters;
-    const timer = setTimeout(
-      () => setAnnouncement(shown === 0 ? 'Aucune attaque affichée' : plural(shown, 'attaque affichée', 'attaques affichées')),
-      500,
-    );
+    const timer = setTimeout(() => setAnnouncement(t.shown(shown)), 500);
     return () => clearTimeout(timer);
-  }, [filters, shown]);
+  }, [filters, shown, t]);
 
   const resetFilters = useCallback(() => {
     setSeverity(ALL);
@@ -144,15 +150,15 @@ export default function App() {
     <MotionConfig reducedMotion="user">
       <div className="flex min-h-dvh flex-col" inert={panelOpen}>
         <a href="#attaques" className="skip-link">
-          Aller aux attaques
+          {t.skip}
         </a>
 
         <Header status={status} generatedAt={generatedAt} now={now} searchRef={searchRef} query={query} onQueryChange={setQuery} />
 
         <main className="flex-1">
-          <h1 className="sr-only">{APP_NAME}, les cyberattaques du jour</h1>
+          <h1 className="sr-only">{t.title(APP_NAME)}</h1>
           <div className="page digest">
-            <p className="digest__date">{todayLabel(now)}</p>
+            <p className="digest__date">{todayLabel(now, lang)}</p>
             {hasCards && <p className="digest__text">{summary}</p>}
           </div>
 
@@ -160,19 +166,15 @@ export default function App() {
             <Filters severity={severity} onSeverityChange={setSeverity} counts={counts} publicOnly={publicOnly} onPublicOnlyChange={setPublicOnly} />
           )}
 
-          <section id="attaques" tabIndex={-1} aria-label="Attaques" className="page results outline-none">
-            {status === 'loading' && <p className="state">Chargement des attaques…</p>}
-            {status === 'error' && (
-              <p className="state">Impossible de charger les attaques pour le moment. Réessayez dans quelques minutes.</p>
-            )}
-            {(status === 'empty' || status === 'ready') && !hasCards && (
-              <p className="state">Aucune attaque recensée pour le moment.</p>
-            )}
+          <section id="attaques" tabIndex={-1} aria-label={t.attacks} className="page results outline-none">
+            {status === 'loading' && <p className="state">{t.loadingAttacks}</p>}
+            {status === 'error' && <p className="state">{t.loadError}</p>}
+            {(status === 'empty' || status === 'ready') && !hasCards && <p className="state">{t.noAttack}</p>}
             {hasCards && shown === 0 && (
               <div className="state">
-                <p>Aucune attaque ne correspond à ces filtres.</p>
+                <p>{t.noMatch}</p>
                 <button type="button" className="link mt-2" onClick={resetFilters}>
-                  Tout afficher
+                  {t.showAll}
                 </button>
               </div>
             )}
@@ -199,7 +201,7 @@ export default function App() {
               (severity === ALL ? (
                 <section aria-labelledby="en-bref">
                   <h2 id="en-bref" className="brief__title">
-                    En bref
+                    {t.inBrief}
                   </h2>
                   <BriefList attacks={layout.minor} now={now} onOpen={openSheet} />
                 </section>
@@ -210,9 +212,9 @@ export default function App() {
         </main>
 
         <footer className="page site-footer">
-          <p>Chaque fiche cite ses sources. Les fiches sont construites à partir de ces sources par des règles fixes, sans IA.</p>
+          <p>{t.footer}</p>
           <button type="button" className="link" onClick={openMethod}>
-            Méthode et sources
+            {t.methodLink}
           </button>
         </footer>
 

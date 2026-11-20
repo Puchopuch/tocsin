@@ -1,7 +1,7 @@
 # Tocsin, frontend
 
-A public information service, in French, about the cyberattacks that touch the general public
-and businesses: calm and clear, neither a security dashboard nor a "hacker" look. It quotes
+A public information service, in French and in English, about the cyberattacks that touch the
+general public and businesses: calm and clear, neither a security dashboard nor a "hacker" look. It quotes
 CERT-FR and other sources but must never look official (no Marianne font, no blue-white-red).
 
 **Tocsin** is a provisional name. It lives in one constant, `APP_NAME` in `src/config.js`;
@@ -25,7 +25,7 @@ npm run check        # automated browser checks and screenshots, see "Checks"
 
 The collector writes `public/data/cards.json`, which Git ignores: it names real organisations.
 Run it first (`.venv\Scripts\python -m collector run` at the root); without that file, the site
-says "Aucune attaque recensée pour le moment".
+says "Aucune attaque recensée pour le moment" ("No attack recorded at the moment").
 
 Dependencies are pinned to exact versions. Add one only with
 `npm install --before=2026-11-05 --save-exact <package>`.
@@ -35,7 +35,7 @@ Dependencies are pinned to exact versions. Add one only with
 `npm run dev` and `npm run build` both read the real `data/cards.json`. Test cards live in
 `scripts/fixtures.mjs` and reach the page only during `npm run check`, which intercepts the
 request for `data/cards.json`; a check verifies that none of them, and no word such as "démo",
-"simulation" or "fictif", reaches the built site.
+"simulation", "fictif" or "fictional", reaches the built site.
 
 | Situation | The page shows |
 |---|---|
@@ -47,19 +47,50 @@ request for `data/cards.json`; a check verifies that none of them, and no word s
 The file is read again every 5 minutes and when the tab comes back into view; a refresh that
 fails keeps what is shown.
 
+## Two languages
+
+The site is in French and in English; "FR | EN" in the header switches the whole page at once.
+
+- **Default**: the first of French or English among the languages of the browser, English if
+  neither is there. The choice is then kept in `localStorage` (`tocsin.lang`), which accepts
+  only `fr` or `en`: any other stored value is ignored, and a browser that refuses storage still
+  switches, without remembering.
+- `<html lang>` and the page title follow the language.
+- **Interface texts** live in `src/lib/i18n.js`, one dictionary per language with the same keys;
+  a check fails if a key is missing or empty in either. Levels: Mineure / Minor, Significative /
+  Significant, Grave / Severe, Critique / Critical. Missing information: "Non communiqué" /
+  "Not disclosed".
+- **Card texts** come from the collector in both languages (see the format below): the site
+  translates nothing.
+- **French typography** (typographic apostrophe, non-breaking space before `: ; ! ?` and inside
+  « », narrow non-breaking space between thousands) applies to French only.
+- **Dates** follow the language: "07 h 42", "aujourd'hui", "hier", "18 nov.", "Mis à jour à
+  15 h 30" in French; "07:42", "today", "yesterday", "18 Nov", "Updated at 15:30" in English.
+
 ## Data format: `data/cards.json`
 
 ```json
-{ "generated_at": "2026-11-20T14:30:46Z", "attacks": [{ "id": "…" }] }
+{
+  "generated_at": "2026-11-20T14:30:46Z",
+  "attacks": [{ "id": "…", "title": { "fr": "Faille exploitée dans REDCap", "en": "Exploited flaw in REDCap" } }]
+}
 ```
 
 `generated_at` is the UTC time of the collection: "Mis à jour à …" shows it, in local time.
 
-| Field | Values | Shown |
+Every text a reader sees comes in both languages, as `{ "fr": "…", "en": "…" }`: `title`,
+`severity_reason`, `lede`, `method`, `loot`, `am_i_affected`, `action`, each paragraph of
+`summary`, each step of `protection_steps`, `attacker.name` and `attacker.country`,
+`victim.label`, `timeline[].label` and `sources[].title`. A plain string counts for both
+languages; when one language is missing, the other one is shown, since the information exists
+and only its translation is missing. Codes (`severity`, `audience`, statuses, CVE numbers) are
+the same in both languages.
+
+| Field | Values | Shown (French page) |
 |---|---|---|
 | `id` | text | internal, stable |
 | `severity` | `critique`, `grave`, `significative`, `mineure` | square and word, layout, tabs |
-| `title` | 10 words at most | card and panel |
+| `title` | 10 words at most in each language | card and panel |
 | `lede` | one sentence | card; otherwise the first sentence of `summary` |
 | `first_seen` | a day alone (`2026-11-18`) or a UTC time (`2026-11-18T07:42:00Z`) | "07 h 42", "aujourd'hui", "hier", "18 nov." |
 | `audience` | `grand_public`, `entreprises`, `les_deux` | "Grand public uniquement", daily sentence |
@@ -67,12 +98,17 @@ fails keeps what is shown.
 | `reliability` | `confirme`, or anything else for a rumour | "Rumeur, non confirmée" |
 | `reliability_source` | where a rumour was seen, e.g. `X` | "Rumeur vue sur X, non confirmée" |
 | `attacker` | `name`, `country`, `status`, `source` | Origine |
-| `victim` | `label` (45 characters at most), `status` | Cibles |
-| `method` | 45 characters at most | Méthode |
-| `loot` | 45 characters at most | Impact |
-| `am_i_affected` | one sentence, 75 characters at most | "Suis-je concerné ?" |
-| `action` | one sentence, 75 characters at most | "Que faire :" |
+| `victim` | `label` (45 characters at most in each language), `status` | Cibles |
+| `method` | 45 characters at most in each language | Méthode |
+| `loot` | 45 characters at most in each language | Impact |
+| `am_i_affected` | one sentence, 75 characters at most in each language | "Suis-je concerné ?" |
+| `action` | one sentence, 75 characters at most in each language | "Que faire :" |
 | `severity_reason`, `summary`, `timeline`, `protection_steps`, `technical`, `sources` | as before | detail panel |
+| `untranslated` | `["title"]`, or empty | the English page shows that title in French, marked `lang="fr"` |
+
+The English page uses the same rules with the words of `src/lib/i18n.js`. `untranslated` marks a
+title that the collector kept in French in the English version, because translating it would
+have meant inventing (see the main README).
 
 Statuses (`attacker.status`, `victim.status`): `confirme`, `revendique`, `presume`, `inconnu`.
 A card shows a status only when it is not confirmed: "Revendiqué, non confirmé", "Présumé, non
@@ -80,7 +116,7 @@ confirmé". A ransomware claim comes with `reliability: "confirme"` (the claim w
 the `revendique` statuses (the attack is not confirmed).
 
 The page is defensive about the feed:
-- any missing information shows "Non communiqué", and its line stays;
+- any missing information shows "Non communiqué" ("Not disclosed"), and its line stays;
 - a day without a time is shown without a time, never as "01 h 00";
 - a card without an explicit `reliability: "confirme"` is treated as a rumour;
 - a claimed attack or a rumour is never shown above "Significative";
@@ -94,15 +130,17 @@ The page is defensive about the feed:
 src/
   config.js              APP_NAME
   main.jsx               entry point
+  lang.jsx               the language: default, choice kept, <html lang>; useLang()
   index.css              tokens (colours, font, sizes), components
   App.jsx                the page: daily sentence, tabs, layout by severity, panels
-  hooks.js               useAttacks (data/cards.json, read again every 5 min), useNow, useStored
+  hooks.js               useAttacks (data/cards.json, read again every 5 min), localize, useNow, useStored
+  lib/i18n.js            interface texts, in French and in English
   lib/digest.js          the daily sentence, counted on the cards shown
-  lib/format.js          French dates, search, Origine and Cibles, sources, safe links
-  lib/severity.js        levels and squares, statuses, severity grid, claim rule
-  lib/typo.js            French typography
+  lib/format.js          dates in both languages, search, Origine and Cibles, sources, safe links
+  lib/severity.js        levels and squares, statuses, severity grid, claim rule, in both languages
+  lib/typo.js            French typography, for French texts only
   components/
-    Header.jsx           name, search, "Mis à jour à 15 h 30"
+    Header.jsx           name, search, "Mis à jour à 15 h 30", FR | EN
     Filters.jsx          tabs with counts, "Grand public uniquement"
     AttackCard.jsx       headline card, card, "En bref" list
     Severity.jsx         10px square, first line of a card
@@ -119,11 +157,12 @@ scripts/
 ### Layout: the size of the card tells the severity
 
 - **Header**, one line: the name, the search (`/` or Ctrl+K), "Mis à jour à 15 h 30" in grey,
-  the time of the last collection.
+  the time of the last collection, and FR | EN.
 - **Date, then one sentence** counted on the cards shown, for example "Depuis hier : 1 attaque
   critique et 2 graves. 2 concernent le grand public." The period says which cards are counted:
   "Aujourd'hui" when they are all from today, "Depuis hier" when some are from yesterday, "Ces
-  sept derniers jours" when nothing happened since yesterday. It is never written in advance.
+  sept derniers jours" when nothing happened since yesterday ("Today", "Since yesterday", "Over
+  the last seven days" in English). It is never written in advance.
 - **Tabs** with their counts, underlined when active; "Grand public uniquement" on the right.
   Without any card, neither tabs nor sentence: only "Aucune attaque recensée pour le moment".
 - **Order**: the most serious first, then the newest day; on the same day and at the same level,
@@ -174,7 +213,12 @@ stolen data.
 `npm run check` builds the site into a temporary folder with the configuration of
 `npm run build`, serves it, drives a browser with Playwright and prints one line per check. Test
 pages run at a fixed moment, Friday 20 November 2026 at 15:00 in Paris. It covers:
-- no test card and no "démo", "simulation" or "fictif" in the code or the built site;
+- no test card and no "démo", "simulation", "fictif" or "fictional" in the code or the built site;
+- both languages: every interface text in both dictionaries; the English page (tabs, daily
+  sentence, "Updated at", cards, panel, "Method and sources") without French words or French
+  typography, and the French page without English; FR | EN, kept after a reload; the default
+  language taken from the browser; a stored value other than `fr` or `en` ignored; a title kept
+  in French marked `lang="fr"`;
 - the layout, from 360 to 1440px, the headline rule, columns and "En bref";
 - the daily sentence, its updates (calm day, new critical attack, "Grand public uniquement")
   and its period ("Aujourd'hui", "Depuis hier", "Ces sept derniers jours");
@@ -187,13 +231,14 @@ pages run at a fixed moment, Friday 20 November 2026 at 15:00 in Paris. It cover
 - links, the Content-Security-Policy, and that no request goes to another domain;
 - the real cards of `public/data/cards.json`, when the collector has written them.
 
-It also saves screenshots in `captures/` (ignored by git):
-- `test-1440.png`, `test-390.png`: test cards, a usual day;
-- `test-calme-1440.png`, `test-calme-390.png`: test cards, a calm day;
-- `test-tiroir-1440.png`, `test-tiroir-390.png`: the detail panel open;
-- `test-incomplet-1440.png`, `test-incomplet-390.png`: test cards missing information;
-- `vide-1440.png`, `vide-390.png`: no file yet;
-- `reel-1440.png`, `reel-390.png`: the real cards, when `public/data/cards.json` exists.
+It also saves screenshots in `captures/` (ignored by git), at 1440 and 390px wide, in French
+(`-fr`) and in English (`-en`):
+- `test-1440-fr.png`, `test-390-en.png`…: test cards, a usual day;
+- `test-calme-…`: test cards, a calm day;
+- `test-tiroir-…`: the detail panel open;
+- `vide-…`: no file yet;
+- `reel-…`: the real cards, when `public/data/cards.json` exists;
+- `test-incomplet-1440.png`, `test-incomplet-390.png`: test cards missing information, in French.
 
 The browser is Playwright's Chromium (once: `npx playwright install chromium`) or an
 installed Chrome or Edge: `CHECK_BROWSER=chrome npm run check`.

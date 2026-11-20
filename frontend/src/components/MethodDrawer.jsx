@@ -2,43 +2,29 @@ import { useId } from 'react';
 import Drawer, { DrawerSection } from './Drawer.jsx';
 import { Square } from './Severity.jsx';
 import { APP_NAME } from '../config.js';
-import { CLAIM_RULE, GRID, GRID_INTRO, SEVERITY, STATUS } from '../lib/severity.js';
-import { typo } from '../lib/typo.js';
-
-// The sources the collector reads today, and nothing else.
-const ORIGINS = [
-  ['Autorités', 'CISA, l’agence américaine de cybersécurité (failles déjà exploitées), et CERT-FR (alertes).'],
-  ['Revendications de pirates', typo('ransomware.live, toujours affichées comme « Revendiqué, non confirmé ».')],
-];
-
-const LIMITS = [
-  'Les fiches sont construites automatiquement à partir des sources citées : si une source se trompe, la fiche aussi.',
-  "L'origine d'une attaque n'est donnée que si une source fiable la donne.",
-  'Une information absente est marquée « Non communiqué » plutôt que devinée.',
-  "Aucune donnée personnelle : une revendication dont la victime pourrait être une personne n'est pas publiée.",
-  'Aucun lien vers les sites des rançonneurs ni vers des données volées.',
-  "Les données sont mises à jour à chaque collecte, dont l'heure est affichée en haut de la page : ce n'est pas du direct.",
-].map(typo);
+import { useLang } from '../lang.jsx';
+import { CLAIM_RULE, GRID, GRID_INTRO, LEVEL_NAMES, STATUS } from '../lib/severity.js';
 
 /** "Méthode et sources": where the information comes from and how levels are set. */
 export default function MethodDrawer({ open, onClose }) {
+  const { lang, t } = useLang();
   const titleId = useId();
 
   return (
-    <Drawer open={open} onClose={onClose} labelledBy={titleId} header={<p className="text-black">Méthode et sources</p>}>
+    <Drawer open={open} onClose={onClose} labelledBy={titleId} header={<p className="text-black">{t.methodLink}</p>}>
       <div className="drawer-body">
         <h2 id={titleId} className="drawer-title">
-          Comment {APP_NAME} présente les attaques
+          {t.methodTitle(APP_NAME)}
         </h2>
 
-        <DrawerSection title="La gravité">
-          <p>{GRID_INTRO}</p>
+        <DrawerSection title={t.severityTitle}>
+          <p>{GRID_INTRO[lang]}</p>
           <dl className="mt-3 grid gap-3">
-            {GRID.map(({ level, criteria }) => (
+            {GRID[lang].map(({ level, criteria }) => (
               <div key={level}>
                 <dt className="flex items-center gap-2 font-bold text-black">
                   <Square level={level} />
-                  {SEVERITY[level].label}
+                  {LEVEL_NAMES[lang][level].label}
                 </dt>
                 <dd>{criteria}</dd>
               </div>
@@ -46,24 +32,24 @@ export default function MethodDrawer({ open, onClose }) {
           </dl>
         </DrawerSection>
 
-        <DrawerSection title="Les revendications et les rumeurs">
-          <p>{CLAIM_RULE}</p>
+        <DrawerSection title={t.claimsTitle}>
+          <p>{CLAIM_RULE[lang]}</p>
         </DrawerSection>
 
-        <DrawerSection title="Les statuts">
+        <DrawerSection title={t.statusesTitle}>
           <dl className="grid gap-3">
             {Object.entries(STATUS).map(([key, status]) => (
               <div key={key}>
-                <dt className="font-bold text-black">{status.label}</dt>
-                <dd>{status.meaning}</dd>
+                <dt className="font-bold text-black">{status[lang].label}</dt>
+                <dd>{status[lang].meaning}</dd>
               </div>
             ))}
           </dl>
         </DrawerSection>
 
-        <DrawerSection title="D’où viennent les informations">
+        <DrawerSection title={t.originsTitle}>
           <dl className="grid gap-3">
-            {ORIGINS.map(([label, text]) => (
+            {t.origins.map(([label, text]) => (
               <div key={label}>
                 <dt className="font-bold text-black">{label}</dt>
                 <dd>{text}</dd>
@@ -72,8 +58,8 @@ export default function MethodDrawer({ open, onClose }) {
           </dl>
         </DrawerSection>
 
-        <DrawerSection title="Les limites">
-          {LIMITS.map((limit) => (
+        <DrawerSection title={t.limitsTitle}>
+          {t.limits.map((limit) => (
             <p key={limit}>{limit}</p>
           ))}
         </DrawerSection>

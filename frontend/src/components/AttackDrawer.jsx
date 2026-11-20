@@ -2,10 +2,12 @@ import { useId, useRef } from 'react';
 import Drawer, { DrawerSection } from './Drawer.jsx';
 import { cardStatus, Facts } from './AttackCard.jsx';
 import { Meta } from './Severity.jsx';
-import { attackUrl, cardDate, fullDate, machineDate, NOT_GIVEN, orderSources, timelineDate } from '../lib/format.js';
+import { useLang } from '../lang.jsx';
+import { attackUrl, cardDate, fullDate, machineDate, orderSources, timelineDate } from '../lib/format.js';
 
 /** "Lire la fiche": everything known about one attack, with its sources. */
 export default function AttackDrawer({ attack, now, done, onToggleStep, onClose }) {
+  const { lang, t } = useLang();
   const titleId = useId();
   // Keep showing the last attack while the panel slides out.
   const shown = useRef(attack);
@@ -21,10 +23,10 @@ export default function AttackDrawer({ attack, now, done, onToggleStep, onClose 
         current && (
           <Meta
             level={current.severity}
-            date={cardDate(current.first_seen, now)}
+            date={cardDate(current.first_seen, now, lang)}
             dateTime={machineDate(current.first_seen)}
-            title={fullDate(current.first_seen)}
-            status={cardStatus(current)}
+            title={fullDate(current.first_seen, lang)}
+            status={cardStatus(current, t)}
           />
         )
       }
@@ -35,6 +37,7 @@ export default function AttackDrawer({ attack, now, done, onToggleStep, onClose 
 }
 
 function Sheet({ attack, now, titleId, done, onToggleStep }) {
+  const { lang, t } = useLang();
   const { technical } = attack;
   const timeline = [...attack.timeline].sort((a, b) => a.date - b.date);
   const steps = attack.protection_steps;
@@ -42,12 +45,12 @@ function Sheet({ attack, now, titleId, done, onToggleStep }) {
 
   return (
     <div className="drawer-body">
-      <h2 id={titleId} className="drawer-title">
+      <h2 id={titleId} className="drawer-title" lang={attack.titleLang}>
         {attack.title}
       </h2>
-      <p className="mt-3">{attack.lede || NOT_GIVEN}</p>
+      <p className="mt-3">{attack.lede || t.notGiven}</p>
       <p className="mt-2 text-[14px] text-muted">
-        Détectée le <time dateTime={machineDate(attack.first_seen)}>{fullDate(attack.first_seen)}</time>
+        {t.detected} <time dateTime={machineDate(attack.first_seen)}>{fullDate(attack.first_seen, lang)}</time>
       </p>
 
       <div className="mt-6">
@@ -56,16 +59,16 @@ function Sheet({ attack, now, titleId, done, onToggleStep }) {
 
       <section className="concern mt-6" aria-labelledby={`${titleId}-concern`}>
         <h3 id={`${titleId}-concern`} className="concern__title">
-          Suis-je concerné&nbsp;?
+          {t.concern}
         </h3>
-        <p>{attack.am_i_affected || NOT_GIVEN}</p>
+        <p>{attack.am_i_affected || t.notGiven}</p>
         <p>
-          <strong>Que faire&nbsp;:</strong> {attack.action || NOT_GIVEN}
+          <strong>{t.whatToDo}</strong> {attack.action || t.notGiven}
         </p>
         {steps.length > 0 && (
           <>
             <p className="mt-4 text-[14px] text-muted" aria-live="polite">
-              Étapes faites&nbsp;: {doneCount} sur {steps.length}
+              {t.stepsDone(doneCount, steps.length)}
             </p>
             <ul className="steps">
               {steps.map((step, index) => (
@@ -82,23 +85,25 @@ function Sheet({ attack, now, titleId, done, onToggleStep }) {
       </section>
 
       {attack.summary.length > 0 && (
-        <DrawerSection title="Ce qui s’est passé">
+        <DrawerSection title={t.happened}>
           {attack.summary.map((paragraph, index) => (
             <p key={index}>{paragraph}</p>
           ))}
           {attack.severity_reason && (
-            <p className="text-[14px] text-muted">Pourquoi ce niveau&nbsp;: {attack.severity_reason}</p>
+            <p className="text-[14px] text-muted">
+              {t.why} {attack.severity_reason}
+            </p>
           )}
         </DrawerSection>
       )}
 
       {timeline.length > 0 && (
-        <DrawerSection title="Chronologie">
+        <DrawerSection title={t.timeline}>
           <ol className="timeline">
             {timeline.map((event, index) => (
               <li key={index}>
-                <time dateTime={machineDate(event.date)} title={fullDate(event.date)}>
-                  {timelineDate(event.date, now)}
+                <time dateTime={machineDate(event.date)} title={fullDate(event.date, lang)}>
+                  {timelineDate(event.date, now, lang)}
                 </time>
                 <span>{event.label}</span>
               </li>
@@ -108,18 +113,18 @@ function Sheet({ attack, now, titleId, done, onToggleStep }) {
       )}
 
       <details className="drawer-section tech">
-        <summary>Détails techniques</summary>
+        <summary>{t.technical}</summary>
         <dl>
           <div>
-            <dt>Failles (CVE)</dt>
-            <dd>{technical.cves.length > 0 ? technical.cves.join(', ') : 'Aucune CVE publiée'}</dd>
+            <dt>{t.cves}</dt>
+            <dd>{technical.cves.length > 0 ? technical.cves.join(', ') : t.noCve}</dd>
           </div>
           <div>
-            <dt>Logiciels concernés</dt>
-            <dd>{technical.software.length > 0 ? technical.software.join(', ') : NOT_GIVEN}</dd>
+            <dt>{t.software}</dt>
+            <dd>{technical.software.length > 0 ? technical.software.join(', ') : t.notGiven}</dd>
           </div>
           <div>
-            <dt>Techniques (MITRE ATT&amp;CK)</dt>
+            <dt>{t.techniques}</dt>
             <dd>
               {technical.techniques.length > 0 ? (
                 <ul>
@@ -130,35 +135,39 @@ function Sheet({ attack, now, titleId, done, onToggleStep }) {
                   ))}
                 </ul>
               ) : (
-                NOT_GIVEN
+                t.notGiven
               )}
             </dd>
           </div>
         </dl>
       </details>
 
-      <DrawerSection title="Sources">
+      <DrawerSection title={t.sources}>
         {attack.sources.length > 0 ? (
           <ul className="sources">
             {orderSources(attack.sources).map((source, index) => (
               <li key={index}>
                 <p className="text-black">
                   {source.name}
-                  {source.official && <span className="text-muted">, source officielle</span>}
+                  {source.official && <span className="text-muted">{t.officialSource}</span>}
                 </p>
                 {source.title && <p className="sources__title">{source.title}</p>}
                 {source.url ? (
                   <a className="link text-[14px]" href={source.url} target="_blank" rel="noopener noreferrer">
-                    Ouvrir la source<span className="sr-only"> {source.name} (nouvel onglet)</span>
+                    {t.openSource}
+                    <span className="sr-only">
+                      {' '}
+                      {source.name} {t.newTab}
+                    </span>
                   </a>
                 ) : (
-                  <p className="sources__title">Pas de lien</p>
+                  <p className="sources__title">{t.noLink}</p>
                 )}
               </li>
             ))}
           </ul>
         ) : (
-          <p>{NOT_GIVEN}</p>
+          <p>{t.notGiven}</p>
         )}
       </DrawerSection>
     </div>
@@ -166,13 +175,14 @@ function Sheet({ attack, now, titleId, done, onToggleStep }) {
 }
 
 function TechniqueLink({ technique }) {
+  const { t } = useLang();
   const url = attackUrl(technique.id);
   const label = `${technique.id}, ${technique.name}`;
   if (!url) return label;
   return (
     <a className="link" href={url} target="_blank" rel="noopener noreferrer">
       {label}
-      <span className="sr-only"> (nouvel onglet)</span>
+      <span className="sr-only"> {t.newTab}</span>
     </a>
   );
 }

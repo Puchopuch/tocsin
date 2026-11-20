@@ -19,6 +19,8 @@ import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { build, preview } from 'vite';
 import { APP_NAME } from '../src/config.js';
+import { LANG_KEY, UI } from '../src/lib/i18n.js';
+import { CLAIM_RULE, GRID, GRID_INTRO, LEVEL_NAMES, STATUS } from '../src/lib/severity.js';
 import { buildAlert, buildFeed, INVENTED_NAMES } from './fixtures.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -84,7 +86,11 @@ const COLOURS = new Set([
 ]);
 
 // Words that must never be seen on the site: it shows real cards only.
-const FICTION = /\bd[ée]mo\b|\bsimul(?:ation|ations|er|ée|ées)\b|\bfictif|\bfictive|données fictives/i;
+const FICTION = /\bd[ée]mo\b|\bsimul(?:ation|ations|er|ée|ées)\b|\bfictif|\bfictive|\bfictional\b|données fictives/i;
+
+// Words of the interface that must never show in the other language.
+const FRENCH_UI = /Mis à jour|Lire la fiche|Suis-je concerné|Que faire|\bOrigine\b|\bCibles\b|\bToutes\b|Grand public uniquement|Non communiqué|En bref|\bFermer\b|Chronologie|\bSignificative\b|\bMineure\b|Depuis hier|Aujourd’hui/;
+const ENGLISH_UI = /\bUpdated\b|Read more|Am I affected|What to do|\bOrigin\b|\bTargets\b|General public only|Not disclosed|In brief|\bClose\b|\bTimeline\b|Since yesterday|\bSevere\b|\bSignificant\b/;
 
 const results = [];
 function report(label, ok, detail = '') {
@@ -124,10 +130,37 @@ await mkdir(captures, { recursive: true });
     const source = await readFile(file, 'utf8');
     const name = path.relative(root, file);
     if (/(Depuis hier|Aujourd’hui|Ces sept derniers jours)\s*:\s*\d|\d+ attaques? (critiques?|graves?|significatives?|mineures?)/.test(source)) written.push(name);
+    if (/(Since yesterday|Today|Over the last seven days):\s*\d|\d+ (critical|severe|significant|minor)( and \d+ \w+)? attacks?\b/.test(source)) written.push(name);
     if (INVENTED_NAMES.some((invention) => source.includes(invention)) || /fixtures/.test(source)) invented.push(name);
   }
   report('La phrase du jour n’est écrite nulle part dans le code', written.length === 0, written.join(', '));
   report('Aucune donnée de test dans src/ : elles vivent dans scripts/fixtures.mjs', invented.length === 0, invented.join(', '));
+}
+
+// Every text of the interface exists in both languages, with the same shape.
+{
+  const problems = [];
+  const compare = (fr, en, where) => {
+    for (const key of new Set([...Object.keys(fr ?? {}), ...Object.keys(en ?? {})])) {
+      const a = fr?.[key];
+      const b = en?.[key];
+      const at = `${where}.${key}`;
+      if (a === undefined || b === undefined) problems.push(`${at} manque en ${a === undefined ? 'français' : 'anglais'}`);
+      else if (typeof a !== typeof b || Array.isArray(a) !== Array.isArray(b)) problems.push(`${at} n’a pas la même forme`);
+      else if (Array.isArray(a)) {
+        if (a.length !== b.length) problems.push(`${at} n’a pas autant d’éléments`);
+        a.forEach((item, index) => compare([item].flat(), [b[index]].flat(), `${at}[${index}]`));
+      } else if (typeof a === 'object' && a !== null) compare(a, b, at);
+      else if (typeof a === 'string' && (!a.trim() || !b.trim())) problems.push(`${at} est vide`);
+    }
+  };
+  compare(UI.fr, UI.en, 'UI');
+  compare(LEVEL_NAMES.fr, LEVEL_NAMES.en, 'LEVEL_NAMES');
+  for (const [key, status] of Object.entries(STATUS)) compare(status.fr, status.en, `STATUS.${key}`);
+  compare(GRID.fr, GRID.en, 'GRID');
+  compare({ text: GRID_INTRO.fr }, { text: GRID_INTRO.en }, 'GRID_INTRO');
+  compare({ text: CLAIM_RULE.fr }, { text: CLAIM_RULE.en }, 'CLAIM_RULE');
+  report('Chaque texte de l’interface existe en français et en anglais, sans trou', problems.length === 0, problems.slice(0, 6).join(' | '));
 }
 
 await build({ root, logLevel: 'error', build: { outDir: out, emptyOutDir: true } });
@@ -156,13 +189,16 @@ const offsite = [];
  * text, a function returning one of these at each request, or null for the real file. `timers`:
  * "fixed" (the date is NOW), "fake" (NOW, and time moves only when the test says so) or "real".
  */
-async function openPage({ feed = usual, width = 1440, height = 900, reduce = false, waitFor = CARDS, timers = 'fixed' } = {}) {
+async function openPage({ feed = usual, width = 1440, height = 900, reduce = false, waitFor = CARDS, timers = 'fixed', locale = 'fr-FR', stored } = {}) {
   const context = await browser.newContext({
     viewport: { width, height },
     reducedMotion: reduce ? 'reduce' : 'no-preference',
-    locale: 'fr-FR',
+    locale,
     timezoneId: 'Europe/Paris',
   });
+  if (stored !== undefined) {
+    await context.addInitScript(([key, value]) => window.localStorage.setItem(key, value), [LANG_KEY, stored]);
+  }
   const page = await context.newPage();
   const errors = [];
   const requests = { feed: 0 };
@@ -237,28 +273,88 @@ async function styleAudit(page) {
 }
 
 try {
-  // Screenshots: the usual day, a calm day and the detail panel, with test cards.
+  // Screenshots in French and in English: the usual day, a calm day and the detail panel, with
+  // test cards.
   {
-    const shoot = async (name, { feed = usual, width, height, act, full = true }) => {
-      const { context, page } = await openPage({ feed, width, height });
+    const shoot = async (name, { feed = usual, width, height, act, full = true, locale }) => {
+      const { context, page } = await openPage({ feed, width, height, locale });
       if (act) await act(page);
       await page.waitForTimeout(400);
       await page.screenshot({ path: path.join(captures, name), fullPage: full });
       await context.close();
     };
     const sheet = async (page) => {
-      await page.locator('.une .link').click();
+      await page.locator('.une .card__foot .link').click();
       await page.waitForSelector('[role="dialog"]');
       await page.waitForTimeout(600); // let the panel finish sliding in
     };
-    for (const [width, height] of [
-      [1440, 900],
-      [390, 844],
+    for (const [lang, locale] of [
+      ['fr', 'fr-FR'],
+      ['en', 'en-GB'],
     ]) {
-      await shoot(`test-${width}.png`, { width, height });
-      await shoot(`test-calme-${width}.png`, { feed: calm, width, height });
-      await shoot(`test-tiroir-${width}.png`, { width, height, act: sheet, full: false });
+      for (const [width, height] of [
+        [1440, 900],
+        [390, 844],
+      ]) {
+        await shoot(`test-${width}-${lang}.png`, { width, height, locale });
+        await shoot(`test-calme-${width}-${lang}.png`, { feed: calm, width, height, locale });
+        await shoot(`test-tiroir-${width}-${lang}.png`, { width, height, locale, act: sheet, full: false });
+      }
     }
+  }
+
+  // English: every text of the interface and of the cards in English, nothing left in French.
+  {
+    const { context, page, errors } = await openPage({ locale: 'en-GB' });
+    const state = await page.evaluate(() => ({ lang: document.documentElement.lang, title: document.title }));
+    const tabs = await tabTexts(page);
+    const text = await page.evaluate(() => document.body.innerText);
+    const une = clean(await page.locator('.une .une__title').textContent());
+    report('Anglais : <html lang="en">, titre de page et onglets Critical, Severe, Significant, Minor', state.lang === 'en' && state.title === `${APP_NAME}, today’s cyberattacks` && JSON.stringify(tabs) === JSON.stringify(['All 8', 'Critical 1', 'Severe 2', 'Significant 3', 'Minor 2']), `${state.lang} ; ${state.title} ; ${tabs.join(', ')}`);
+    report('Anglais : phrase du jour et « Updated at » de la collecte', (await digestText(page)) === 'Since yesterday: 1 critical and 2 severe attacks. 2 affect the general public.' && (await updatedText(page)) === 'Updated at 14:48', `${await digestText(page)} ; ${await updatedText(page)}`);
+    report('Anglais : les cartes parlent anglais', une === 'Massive data leak at the operator TelecomX' && /Am I affected\?/.test(text) && /What to do:/.test(text) && /Not disclosed/.test(text), une);
+    report('Anglais : aucun texte de l’interface en français', !FRENCH_UI.test(text), FRENCH_UI.exec(text)?.[0] ?? '');
+    report('Typographie française seulement en français : aucune espace insécable avant « : ; ? ! » en anglais', !/[  ][:;?!»]/.test(text) && !/«/.test(text));
+
+    await page.locator('.une .card__foot .link').click();
+    await page.waitForSelector('[role="dialog"]');
+    const sheetText = await page.locator('[role="dialog"]').innerText();
+    await page.keyboard.press('Escape');
+    await page.waitForSelector('[role="dialog"]', { state: 'detached' });
+    await page.click('text=Method and sources');
+    await page.waitForSelector('[role="dialog"]');
+    const methodText = await page.locator('[role="dialog"]').innerText();
+    await context.close();
+    report(
+      'Anglais : fiche et « Method and sources » traduites',
+      ['Close', 'What happened', 'Timeline', 'Technical details', 'Sources', 'Detected on'].every((part) => sheetText.includes(part)) &&
+        ['Severity', 'or a CERT-FR alert', 'less common software', 'Claimed, not confirmed', 'Where the information comes from'].every((part) => methodText.includes(part)) &&
+        !FRENCH_UI.test(sheetText + methodText),
+      FRENCH_UI.exec(sheetText + methodText)?.[0] ?? '',
+    );
+    report('Anglais : aucune erreur dans la console', errors.length === 0, errors.join(' | '));
+  }
+
+  // The language: the browser's by default, then the reader's choice, kept in this browser only.
+  {
+    const french = await openPage();
+    const frenchText = await french.page.evaluate(() => document.body.innerText);
+    report('Français : aucun texte de l’interface en anglais, et la typographie française', !ENGLISH_UI.test(frenchText) && / :/.test(frenchText), ENGLISH_UI.exec(frenchText)?.[0] ?? '');
+    await french.page.click('.lang-switch button[lang="en"]');
+    const switched = await french.page.evaluate(() => ({ lang: document.documentElement.lang, tab: document.querySelector('.tab')?.textContent.trim() }));
+    await french.page.reload();
+    await french.page.waitForSelector(CARDS);
+    const kept = await french.page.evaluate((key) => ({ lang: document.documentElement.lang, stored: window.localStorage.getItem(key) }), LANG_KEY);
+    await french.context.close();
+    report('Bouton FR | EN : la page passe en anglais, le choix est gardé après rechargement', switched.lang === 'en' && switched.tab.startsWith('All') && kept.lang === 'en' && kept.stored === 'en', JSON.stringify({ switched, kept }));
+
+    const german = await openPage({ locale: 'de-DE' });
+    const germanLang = await german.page.evaluate(() => document.documentElement.lang);
+    await german.context.close();
+    const forged = await openPage({ stored: '<img src=x onerror=alert(1)>' });
+    const forgedLang = await forged.page.evaluate(() => document.documentElement.lang);
+    await forged.context.close();
+    report('Langue par défaut : celle du navigateur (anglais si ni français ni anglais) ; le stockage n’accepte que « fr » ou « en »', germanLang === 'en' && forgedLang === 'fr', `${germanLang} ; ${forgedLang}`);
   }
 
   // Widths: no sideways scroll, one-line header, one column on phones with the headline first.
@@ -435,12 +531,39 @@ try {
       JSON.stringify(times),
     );
     report('Fiche d’une date sans heure : « Détectée le 20 novembre 2026 », chronologie sans heure', /Détectée le 20 novembre 2026(?! à)/.test(sheet) && /20 nov\./.test(sheet) && !/\d\s*h\s*\d{2}/.test(sheet.replace(/Mis à jour.*$/m, '')));
+
+    const english = await openPage({ feed: dayOnly, locale: 'en-GB' });
+    const dates = await english.page.$$eval('#attaques time', (nodes) => nodes.map((node) => node.textContent.trim()));
+    await english.page.locator('#lire-test-jour').click();
+    await english.page.waitForSelector('[role="dialog"]');
+    const englishSheet = await english.page.locator('[role="dialog"]').innerText();
+    await english.context.close();
+    report(
+      'Anglais, date sans heure : « today », « yesterday », « Detected on 20 November 2026 », jamais une heure',
+      dates.includes('today') && dates.includes('yesterday') && /Detected on 20 November 2026(?! at)/.test(englishSheet) && !/\d{2}:\d{2}/.test(dates.join(' ')),
+      dates.join(', '),
+    );
+  }
+
+  // A title the collector could not translate keeps its French words, and says so to assistive
+  // technologies with lang="fr".
+  {
+    const kept = structuredClone(usual);
+    kept.attacks[0].title = { fr: 'Campagne d’hameçonnage visant les collectivités', en: 'Campagne d’hameçonnage visant les collectivités' };
+    kept.attacks[0].untranslated = ['title'];
+    const { context, page } = await openPage({ feed: kept, locale: 'en-GB' });
+    const title = await page.evaluate(() => {
+      const node = document.querySelector('.une .une__title');
+      return { lang: node?.getAttribute('lang'), text: node?.textContent };
+    });
+    await context.close();
+    report('Titre gardé dans sa langue d’origine : affiché tel quel, marqué lang="fr" dans la version anglaise', title.lang === 'fr' && title.text.startsWith('Campagne'), JSON.stringify(title));
   }
 
   // No card: the page says so, and invents nothing.
   {
-    const quietPage = async (feed, name) => {
-      const { context, page, errors } = await openPage({ feed, waitFor: '.state' });
+    const quietPage = async (feed, name, locale = 'fr-FR') => {
+      const { context, page, errors } = await openPage({ feed, waitFor: '.state', locale });
       const result = {
         state: clean(await page.locator('.state').first().textContent()),
         updated: await updatedText(page),
@@ -450,17 +573,24 @@ try {
         errors: errors.filter((error) => !/404|Failed to load resource/.test(error)),
       };
       if (name) {
-        await page.screenshot({ path: path.join(captures, `${name}-1440.png`), fullPage: true });
+        const lang = locale.slice(0, 2);
+        await page.screenshot({ path: path.join(captures, `${name}-1440-${lang}.png`), fullPage: true });
         await page.setViewportSize({ width: 390, height: 844 });
-        await page.screenshot({ path: path.join(captures, `${name}-390.png`), fullPage: true });
+        await page.screenshot({ path: path.join(captures, `${name}-390-${lang}.png`), fullPage: true });
       }
-      await page.click('text=Méthode et sources');
+      await page.click('.site-footer .link');
       await page.waitForSelector('[role="dialog"]');
       result.text += await page.locator('[role="dialog"]').innerText();
       await context.close();
       return result;
     };
     const absent = await quietPage(404, 'vide');
+    const absentEnglish = await quietPage(404, 'vide', 'en-GB');
+    report(
+      'Anglais, sans data/cards.json : « No attack recorded at the moment. », sans heure',
+      absentEnglish.state === 'No attack recorded at the moment.' && absentEnglish.updated === '' && !FICTION.test(absentEnglish.text) && !FRENCH_UI.test(absentEnglish.text),
+      absentEnglish.state,
+    );
     report(
       'Sans data/cards.json : « Aucune attaque recensée pour le moment », sans heure, sans onglets ni phrase',
       absent.state === 'Aucune attaque recensée pour le moment.' && absent.updated === '' && absent.tabs === 0 && absent.digest === 0 && absent.errors.length === 0,
@@ -602,21 +732,33 @@ try {
     report('Aucune erreur dans la console, CSP comprise', errors.length === 0, errors.join(' | '));
   }
 
-  // The real cards, when the collector has written them.
+  // The real cards, when the collector has written them, in French and in English.
   if (existsSync(realFile)) {
     const real = JSON.parse(await readFile(realFile, 'utf8'));
-    const { context, page, errors } = await openPage({ feed: null, timers: 'real', waitFor: `${CARDS}, .state` });
-    await page.screenshot({ path: path.join(captures, 'reel-1440.png'), fullPage: true });
-    const shown = await page.locator(CARDS).count();
-    const total = (await tabTexts(page))[0] ?? '';
-    const stamp = (await page.locator('.site-header__updated time').getAttribute('datetime').catch(() => null)) ?? '';
-    await page.setViewportSize({ width: 390, height: 844 });
-    await page.screenshot({ path: path.join(captures, 'reel-390.png'), fullPage: true });
-    await context.close();
+    const seen = {};
+    for (const [lang, locale, all] of [
+      ['fr', 'fr-FR', 'Toutes'],
+      ['en', 'en-GB', 'All'],
+    ]) {
+      const { context, page, errors } = await openPage({ feed: null, timers: 'real', waitFor: `${CARDS}, .state`, locale });
+      await page.screenshot({ path: path.join(captures, `reel-1440-${lang}.png`), fullPage: true });
+      const shown = await page.locator(CARDS).count();
+      const total = (await tabTexts(page))[0] ?? '';
+      const stamp = (await page.locator('.site-header__updated time').getAttribute('datetime').catch(() => null)) ?? '';
+      const text = await page.evaluate(() => document.body.innerText);
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.screenshot({ path: path.join(captures, `reel-390-${lang}.png`), fullPage: true });
+      await context.close();
+      seen[lang] = {
+        ok: (shown === 0 || total === `${all} ${shown}`) && Date.parse(stamp) === Date.parse(real.generated_at) && errors.length === 0,
+        other: lang === 'en' ? FRENCH_UI.exec(text)?.[0] : ENGLISH_UI.exec(text)?.[0],
+        shown,
+      };
+    }
     report(
-      `Vraies cartes de public/data/cards.json : ${shown} affichées, heure de la collecte, aucune erreur`,
-      (shown === 0 || total === `Toutes ${shown}`) && Date.parse(stamp) === Date.parse(real.generated_at) && errors.length === 0,
-      `${total} ; collecte ${real.generated_at}`,
+      `Vraies cartes de public/data/cards.json, en français et en anglais : ${seen.fr.shown} affichées, heure de la collecte, aucune erreur`,
+      seen.fr.ok && seen.en.ok && seen.fr.shown === seen.en.shown && !seen.fr.other && !seen.en.other,
+      `collecte ${real.generated_at}${seen.en.other ? ` ; en anglais : « ${seen.en.other} »` : ''}${seen.fr.other ? ` ; en français : « ${seen.fr.other} »` : ''}`,
     );
   } else {
     console.log('(public/data/cards.json absent : pas de capture des vraies cartes)');

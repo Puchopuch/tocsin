@@ -1,6 +1,7 @@
 // Data and state hooks. The site reads data/cards.json, written by the collector at each
 // collection (collector/ at the root of the repository), and nothing else. There is no other
-// mode: without that file, the page says that no attack has been recorded yet.
+// mode: without that file, the page says that no attack has been recorded yet. Each text of a
+// card comes in French and in English ({ "fr": …, "en": … }); the page shows the language chosen.
 
 import { useCallback, useEffect, useState } from 'react';
 import { applyClaimRule, LEVELS, STATUS } from './lib/severity.js';
@@ -32,11 +33,31 @@ function toDate(value) {
 }
 
 const list = (value) => (Array.isArray(value) ? value : []);
-const text = (value) => (typeof value === 'string' ? typo(value.trim()) : '');
 const firstSentence = (paragraph) => /^.*?[.!?](?=\s|$)/.exec(paragraph ?? '')?.[0] ?? paragraph ?? '';
 
+/**
+ * The text of a field in one language. A plain string is the same in both languages. When the
+ * language asked for is missing, the other one is shown rather than nothing: the information
+ * exists, only its translation is missing.
+ */
+function pick(value, lang) {
+  if (typeof value === 'string') return value;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return '';
+  const other = lang === 'fr' ? 'en' : 'fr';
+  const chosen = typeof value[lang] === 'string' && value[lang].trim() ? value[lang] : value[other];
+  return typeof chosen === 'string' ? chosen : '';
+}
+
+/** Reads texts in one language; French typography for French only. */
+function reader(lang) {
+  return (value) => {
+    const text = pick(value, lang).trim();
+    return lang === 'fr' ? typo(text) : text;
+  };
+}
+
 /** The attacker as given by the feed; null when the feed says nothing about it. */
-function attackerOf(raw) {
+function attackerOf(raw, text) {
   if (!raw || typeof raw !== 'object') return null;
   const name = text(raw.name);
   // A name without a status is never shown as confirmed.
@@ -49,63 +70,74 @@ function attackerOf(raw) {
   };
 }
 
-/** One alert of the feed, with Date objects and safe defaults; null if it cannot be shown. */
-export function normalizeAttack(raw) {
+/** One alert of the feed in one language, with Date objects and safe defaults; null if it cannot be shown. */
+export function normalizeAttack(raw, lang = 'fr') {
+  const text = reader(lang);
   const firstSeen = toDate(raw?.first_seen);
   if (!raw?.id || !text(raw.title) || !LEVELS.includes(raw.severity) || !firstSeen) return null;
   const summary = list(raw.summary).map(text).filter(Boolean);
 
-  return applyClaimRule({
-    id: String(raw.id),
-    severity: raw.severity,
-    severity_reason: text(raw.severity_reason),
-    title: text(raw.title),
-    lede: text(raw.lede) || firstSentence(summary[0]),
-    first_seen: firstSeen,
-    // True only when a source confirms that the flaw is already exploited.
-    exploited: raw.exploited === true,
-    sector: text(raw.sector),
-    audience: AUDIENCES.includes(raw.audience) ? raw.audience : 'les_deux',
-    // Only "confirme" counts as confirmed: anything else is treated as a rumour.
-    reliability: raw.reliability === 'confirme' ? 'confirme' : 'rumeur',
-    reliability_source: text(raw.reliability_source) || null,
-    attacker: attackerOf(raw.attacker),
-    victim: {
-      label: text(raw.victim?.label),
-      status: STATUS[raw.victim?.status] ? raw.victim.status : 'inconnu',
+  return applyClaimRule(
+    {
+      id: String(raw.id),
+      severity: raw.severity,
+      severity_reason: text(raw.severity_reason),
+      title: text(raw.title),
+      // A title the collector could not translate keeps the words of its source, in French.
+      titleLang: lang !== 'fr' && list(raw.untranslated).includes('title') ? 'fr' : undefined,
+      lede: text(raw.lede) || firstSentence(summary[0]),
+      first_seen: firstSeen,
+      // True only when a source confirms that the flaw is already exploited.
+      exploited: raw.exploited === true,
+      sector: text(raw.sector),
+      audience: AUDIENCES.includes(raw.audience) ? raw.audience : 'les_deux',
+      // Only "confirme" counts as confirmed: anything else is treated as a rumour.
+      reliability: raw.reliability === 'confirme' ? 'confirme' : 'rumeur',
+      reliability_source: text(raw.reliability_source) || null,
+      attacker: attackerOf(raw.attacker, text),
+      victim: {
+        label: text(raw.victim?.label),
+        status: STATUS[raw.victim?.status] ? raw.victim.status : 'inconnu',
+      },
+      method: text(raw.method),
+      loot: text(raw.loot),
+      am_i_affected: text(raw.am_i_affected),
+      action: text(raw.action),
+      summary,
+      timeline: list(raw.timeline)
+        .map((event) => ({ date: toDate(event?.date), label: text(event?.label) }))
+        .filter((event) => event.date && event.label),
+      protection_steps: list(raw.protection_steps).map(text).filter(Boolean),
+      technical: {
+        cves: list(raw.technical?.cves).filter((cve) => typeof cve === 'string'),
+        software: list(raw.technical?.software).map(text).filter(Boolean),
+        techniques: list(raw.technical?.techniques)
+          .filter((technique) => technique?.id)
+          .map((technique) => ({ id: String(technique.id), name: text(technique.name) })),
+      },
+      sources: list(raw.sources)
+        .filter((source) => source?.name)
+        .map((source) => ({
+          name: text(source.name),
+          title: text(source.title),
+          url: safeUrl(source.url),
+          official: source.official === true,
+        })),
     },
-    method: text(raw.method),
-    loot: text(raw.loot),
-    am_i_affected: text(raw.am_i_affected),
-    action: text(raw.action),
-    summary,
-    timeline: list(raw.timeline)
-      .map((event) => ({ date: toDate(event?.date), label: text(event?.label) }))
-      .filter((event) => event.date && event.label),
-    protection_steps: list(raw.protection_steps).map(text).filter(Boolean),
-    technical: {
-      cves: list(raw.technical?.cves).filter((cve) => typeof cve === 'string'),
-      software: list(raw.technical?.software).map(text).filter(Boolean),
-      techniques: list(raw.technical?.techniques)
-        .filter((technique) => technique?.id)
-        .map((technique) => ({ id: String(technique.id), name: text(technique.name) })),
-    },
-    sources: list(raw.sources)
-      .filter((source) => source?.name)
-      .map((source) => ({
-        name: text(source.name),
-        title: text(source.title),
-        url: safeUrl(source.url),
-        official: source.official === true,
-      })),
-  });
+    lang,
+  );
 }
 
-/** The whole feed: { generatedAt, attacks }. Throws if the file is not a feed. */
-export function normalizeFeed(json) {
+/** The cards of the feed in one language, ready to show. */
+export function localize(attacks, lang) {
+  return list(attacks).map((raw) => normalizeAttack(raw, lang)).filter(Boolean);
+}
+
+/** The feed: { generatedAt, attacks } with the attacks as written, both languages kept. Throws if the file is not a feed. */
+export function readFeed(json) {
   const generatedAt = toDate(json?.generated_at);
   if (!generatedAt || !Array.isArray(json?.attacks)) throw new Error('Invalid feed');
-  return { generatedAt, attacks: json.attacks.map(normalizeAttack).filter(Boolean) };
+  return { generatedAt, attacks: json.attacks };
 }
 
 const EMPTY = { status: 'empty', generatedAt: null, attacks: [] };
@@ -117,13 +149,13 @@ async function loadFeed(signal) {
   // No file yet: a 404, or the HTML page that some servers send in its place.
   if (response.status === 404 || (response.ok && type.includes('text/html'))) return EMPTY;
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return { status: 'ready', ...normalizeFeed(await response.json()) };
+  return { status: 'ready', ...readFeed(await response.json()) };
 }
 
 const sameFeed = (a, b) => a.status === b.status && a.generatedAt?.getTime() === b.generatedAt?.getTime();
 
 /**
- * The attacks to show. `status` is "loading", "ready" (the file was read; it may hold no attack),
+ * The feed to show. `status` is "loading", "ready" (the file was read; it may hold no attack),
  * "empty" (no file: no collection yet) or "error" (the file cannot be read). After the first
  * load, a refresh that fails keeps what is shown.
  */

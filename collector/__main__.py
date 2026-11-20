@@ -102,12 +102,17 @@ def print_summary(now, reports, data, rejected, held, outcome, *, dry_run: bool)
         print(f"  {count} : {why}")
     if held or rejected:
         print(f"  Détails dans le journal local : {shown(config.JOURNAL_PATH)}")
+    kept_french = [card for card in attacks if card.get("untranslated")]
+    if kept_french:
+        print(f"Titres gardés en français dans la version anglaise : {len(kept_french)}")
+        for card in kept_french:
+            print(f"  {card['id']} : {card['title']['fr']}")
     print("Appels à l'IA : 0 (la phase 2 n'est pas encore construite)")
     print(f"{shown(config.OUTPUT_PATH)} : {outcome}")
     if dry_run and attacks:
         print("Ce qui serait écrit :")
         for card in attacks:
-            print(f"  {LEVEL_NAMES[card['severity']]:<13} {card['first_seen'][:10]}  {card['title']}")
+            print(f"  {LEVEL_NAMES[card['severity']]:<13} {card['first_seen'][:10]}  {card['title']['fr']}")
 
 
 def run(args: argparse.Namespace, *, transport: httpx.BaseTransport | None, now: datetime | None) -> int:

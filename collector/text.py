@@ -1,4 +1,4 @@
-"""French text helpers shared by the cards and the severity rules."""
+"""Text helpers shared by the cards and the severity rules, in French and in English."""
 
 import re
 import unicodedata
@@ -7,6 +7,10 @@ from datetime import date
 MONTHS = (
     "janvier", "février", "mars", "avril", "mai", "juin",
     "juillet", "août", "septembre", "octobre", "novembre", "décembre",
+)
+EN_MONTHS = (
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
 )
 
 
@@ -25,9 +29,19 @@ def de(name: str) -> str:
     return f"d'{name}" if name[:1] and fold(name[:1]) in "aeiouy" else f"de {name}"
 
 
+def article(name: str) -> str:
+    """English article: "a Synology product", but "an Apple product"."""
+    return "an" if name[:1].lower() in tuple("aeiou") else "a"
+
+
 def french_date(day: date) -> str:
     """"18 novembre 2026", "1er décembre 2026"."""
     return f"{'1er' if day.day == 1 else day.day} {MONTHS[day.month - 1]} {day.year}"
+
+
+def english_date(day: date) -> str:
+    """"18 November 2026", as the English version of the site writes dates."""
+    return f"{day.day} {EN_MONTHS[day.month - 1]} {day.year}"
 
 
 def mentions(text: str, name: str) -> bool:

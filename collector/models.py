@@ -97,9 +97,29 @@ class Claim(Model):
 # The card, as frontend/README.md describes it.
 
 
+class Text(Model):
+    """A text of the card, in French and in English. Both are required: the site never shows a
+    missing text in one language."""
+
+    fr: str = Field(min_length=1)
+    en: str = Field(min_length=1)
+
+
+LANGUAGES = {"fr": "en français", "en": "en anglais"}
+
+
+def within(text: Text | None, limit: int) -> Text | None:
+    """A length limit of frontend/README.md, in each language."""
+    if text is not None:
+        for lang, where in LANGUAGES.items():
+            if len(getattr(text, lang)) > limit:
+                raise ValueError(f"plus de {limit} caractères {where}")
+    return text
+
+
 class Attacker(Model):
-    name: str | None = None
-    country: str | None = None
+    name: Text | None = None
+    country: Text | None = None
     status: Status
     source: str | None = None
 
@@ -112,13 +132,18 @@ class Attacker(Model):
 
 
 class Victim(Model):
-    label: str | None = Field(default=None, max_length=config.MAX_SHORT)
+    label: Text | None = None
     status: Status
+
+    @field_validator("label")
+    @classmethod
+    def _label(cls, value: Text | None) -> Text | None:
+        return within(value, config.MAX_SHORT)
 
 
 class Event(Model):
     date: str
-    label: str = Field(min_length=1)
+    label: Text
 
     @field_validator("date")
     @classmethod
@@ -147,7 +172,7 @@ class Technical(Model):
 
 class Source(Model):
     name: str = Field(min_length=1)
-    title: str = ""
+    title: Text | None = None
     url: str
     official: bool = False
 
@@ -162,8 +187,8 @@ class Source(Model):
 class Card(Model):
     id: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9-]*$")
     severity: Level
-    severity_reason: str = Field(min_length=1)
-    title: str = Field(min_length=1)
+    severity_reason: Text
+    title: Text
     first_seen: str
     audience: Audience
     reliability: Literal["confirme", "rumeur"]
@@ -172,15 +197,18 @@ class Card(Model):
     exploited: bool = False
     attacker: Attacker | None = None
     victim: Victim
-    method: str | None = Field(default=None, max_length=config.MAX_SHORT)
-    loot: str | None = Field(default=None, max_length=config.MAX_SHORT)
-    am_i_affected: str | None = Field(default=None, max_length=config.MAX_LINE)
-    action: str | None = Field(default=None, max_length=config.MAX_LINE)
-    summary: list[str] = Field(default_factory=list)
+    method: Text | None = None
+    loot: Text | None = None
+    am_i_affected: Text | None = None
+    action: Text | None = None
+    summary: list[Text] = Field(default_factory=list)
     timeline: list[Event] = Field(default_factory=list)
-    protection_steps: list[str] = Field(default_factory=list)
+    protection_steps: list[Text] = Field(default_factory=list)
     technical: Technical = Field(default_factory=Technical)
     sources: list[Source] = Field(min_length=1)
+    # Fields whose English text is the words of the source, kept as they are because translating
+    # them would mean inventing.
+    untranslated: list[Literal["title"]] = Field(default_factory=list)
 
     @field_validator("first_seen")
     @classmethod
@@ -189,10 +217,21 @@ class Card(Model):
 
     @field_validator("title")
     @classmethod
-    def _title(cls, value: str) -> str:
-        if len(value.split()) > config.MAX_TITLE_WORDS:
-            raise ValueError(f"titre de plus de {config.MAX_TITLE_WORDS} mots")
+    def _title(cls, value: Text) -> Text:
+        for lang, where in LANGUAGES.items():
+            if len(getattr(value, lang).split()) > config.MAX_TITLE_WORDS:
+                raise ValueError(f"titre de plus de {config.MAX_TITLE_WORDS} mots {where}")
         return value
+
+    @field_validator("method", "loot")
+    @classmethod
+    def _short(cls, value: Text | None) -> Text | None:
+        return within(value, config.MAX_SHORT)
+
+    @field_validator("am_i_affected", "action")
+    @classmethod
+    def _line(cls, value: Text | None) -> Text | None:
+        return within(value, config.MAX_LINE)
 
     @model_validator(mode="after")
     def _claims_stay_significant(self) -> Card:
@@ -213,8 +252,9 @@ class Card(Model):
             *self.summary, *self.protection_steps, *(event.label for event in self.timeline),
         ]
         for text in filter(None, texts):
-            if EMAIL.search(text) or PHONE.search(text):
-                raise ValueError("donnée personnelle : adresse e-mail ou numéro de téléphone")
+            for value in (text.fr, text.en):
+                if EMAIL.search(value) or PHONE.search(value):
+                    raise ValueError("donnée personnelle : adresse e-mail ou numéro de téléphone")
         return self
 
 

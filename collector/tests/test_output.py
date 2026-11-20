@@ -1,4 +1,5 @@
-"""Validation of the cards (B10, B5 rules 2, 4, 5, 7) and writing of cards.json (B5 rule 9)."""
+"""Validation of the cards (B10, B5 rules 2, 4, 5, 7), in both languages, and writing of cards.json
+(B5 rule 9)."""
 
 import json
 from copy import deepcopy
@@ -12,6 +13,10 @@ from collector.sources import certfr, kev, ransomware_live
 from .helpers import NOW, sample
 
 BASE = cards.kev_card(next(entry for entry in kev.parse(sample("kev.json")) if entry.cve == "CVE-2026-40217"))
+
+
+def both(fr: str, en: str) -> dict:
+    return {"fr": fr, "en": en}
 
 
 def changed(**fields) -> dict:
@@ -40,7 +45,7 @@ def test_a_template_card_is_valid():
     "/relative/link",
 ])
 def test_links_other_than_plain_http_are_refused(url):
-    card = changed(sources=[{"name": "Test", "title": "", "url": url, "official": False}])
+    card = changed(sources=[{"name": "Test", "title": None, "url": url, "official": False}])
     assert "sources.0.url" in refused(card)
 
 
@@ -48,29 +53,41 @@ def test_a_card_without_source_is_refused():
     assert "sources" in refused(changed(sources=[]))
 
 
-def test_lengths_of_the_readme():
-    assert "title" in refused(changed(title="Un titre de onze mots ne peut jamais passer sur une carte"))
-    assert "method" in refused(changed(method="x" * 46))
-    assert "loot" in refused(changed(loot="x" * 46))
-    assert "victim.label" in refused(changed(victim={"label": "x" * 46, "status": "confirme"}))
-    assert "am_i_affected" in refused(changed(am_i_affected="x" * 76))
-    assert "action" in refused(changed(action="x" * 76))
+def test_every_text_needs_both_languages():
+    assert "title" in refused(changed(title={"fr": "Faille exploitée dans Exemple"}))
+    assert "method" in refused(changed(method=both("Faille", "")))
+    assert "summary" in refused(changed(summary=["Un texte sans sa version anglaise."]))
+
+
+@pytest.mark.parametrize("lang", ["fr", "en"])
+def test_lengths_of_the_readme_in_each_language(lang):
+    def one(long: str, short: str = "ok") -> dict:
+        return {"fr": long, "en": short} if lang == "fr" else {"fr": short, "en": long}
+
+    assert "title" in refused(changed(title=one("Un titre de onze mots ne peut jamais passer sur une carte", "Titre")))
+    assert "method" in refused(changed(method=one("x" * 46)))
+    assert "loot" in refused(changed(loot=one("x" * 46)))
+    assert "victim.label" in refused(changed(victim={"label": one("x" * 46), "status": "confirme"}))
+    assert "am_i_affected" in refused(changed(am_i_affected=one("x" * 76)))
+    assert "action" in refused(changed(action=one("x" * 76)))
 
 
 def test_a_claim_above_significant_is_refused():
-    card = changed(severity="grave", victim={"label": "Exemple", "status": "revendique"})
+    card = changed(severity="grave", victim={"label": both("Exemple", "Exemple"), "status": "revendique"})
     assert "revendication" in refused(card)
 
 
-def test_personal_data_is_refused():
+@pytest.mark.parametrize("lang", ["fr", "en"])
+def test_personal_data_is_refused_in_each_language(lang):
     # An invented address, put together here so that the repository holds no e-mail address at all.
     address = "@".join(["contact", "exemple.example"])
-    assert "personnelle" in refused(changed(summary=[f"Écrire à {address} pour en savoir plus."]))
-    assert "personnelle" in refused(changed(summary=["Appeler le 01 23 45 67 89."]))
+    for sentence in (f"Écrire à {address}.", "Appeler le 01 23 45 67 89."):
+        pair = {"fr": sentence, "en": "Nothing here."} if lang == "fr" else {"fr": "Rien ici.", "en": sentence}
+        assert "personnelle" in refused(changed(summary=[pair]))
 
 
 def test_an_attacker_country_needs_its_source():
-    attacker = {"name": "Groupe Fictif", "country": "Fictivie", "status": "presume", "source": None}
+    attacker = {"name": both("Groupe Fictif", "Fictif group"), "country": both("Fictivie", "Fictivia"), "status": "presume", "source": None}
     assert "attacker" in refused(changed(attacker=attacker))
 
 
@@ -83,7 +100,7 @@ def test_times_are_utc_or_a_day_alone():
 
 def test_reasons_never_repeat_the_content():
     name = "Organisation Fictive Au Nom Bien Trop Long Pour Une Carte"
-    assert name not in refused(changed(victim={"label": name, "status": "confirme"}))
+    assert name not in refused(changed(victim={"label": both(name, name), "status": "confirme"}))
 
 
 def test_on_the_same_day_an_exploited_flaw_comes_first():
@@ -141,5 +158,5 @@ def test_the_written_file_is_accepted_by_the_card_model():
     feed = Feed.model_validate(json.loads(config.OUTPUT_PATH.read_text(encoding="utf-8")))
     assert len(feed.attacks) == len(valid) == 11
     assert [card_id for card_id, _ in rejected] == [
-        next(card["id"] for card in built if card["victim"]["label"].startswith("Groupement"))
+        next(card["id"] for card in built if card["victim"]["label"]["fr"].startswith("Groupement"))
     ]

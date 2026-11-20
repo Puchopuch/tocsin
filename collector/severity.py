@@ -9,11 +9,24 @@ from .text import fold
 
 LEVELS = ("critique", "grave", "significative", "mineure")
 
-# Phase 1 levels and their reasons, each one a criterion of the published grid.
-KEV_WIDESPREAD = ("grave", "Faille déjà exploitée dans un logiciel répandu.")
-KEV_NICHE = ("significative", "Faille déjà exploitée, dans un logiciel peu répandu.")
-CERTFR_ALERT = ("grave", "Alerte du CERT-FR, qui signale un danger immédiat.")
-CLAIM = ("significative", "Revendication non confirmée : niveau limité à « Significative ».")
+# Phase 1 levels and their reasons, in French and in English, each one a criterion of the
+# published grid.
+KEV_WIDESPREAD = ("grave", {
+    "fr": "Faille déjà exploitée dans un logiciel répandu.",
+    "en": "Flaw already exploited in widespread software.",
+})
+KEV_NICHE = ("significative", {
+    "fr": "Faille déjà exploitée, dans un logiciel peu répandu.",
+    "en": "Flaw already exploited, in less common software.",
+})
+CERTFR_ALERT = ("grave", {
+    "fr": "Alerte du CERT-FR, qui signale un danger immédiat.",
+    "en": "CERT-FR alert, which warns of an immediate danger.",
+})
+CLAIM = ("significative", {
+    "fr": "Revendication non confirmée : niveau limité à « Significative ».",
+    "en": "Unconfirmed claim: level capped at “Significant”.",
+})
 
 
 def rank(level: str) -> int:
@@ -38,5 +51,5 @@ def cap_claim(card: dict) -> dict:
         or card["reliability"] == "rumeur"
     )
     if unconfirmed and rank(card["severity"]) < rank("significative"):
-        return {**card, "severity": CLAIM[0], "severity_reason": CLAIM[1]}
+        return {**card, "severity": CLAIM[0], "severity_reason": dict(CLAIM[1])}
     return card

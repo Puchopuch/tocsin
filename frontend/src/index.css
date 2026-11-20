@@ -195,11 +195,42 @@
     border-color: var(--color-black);
   }
 
-  .site-header__updated {
+  .site-header__side {
     grid-area: updated;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 16px;
+  }
+
+  .site-header__updated {
     color: var(--color-muted);
     font-size: 14px;
     white-space: nowrap;
+  }
+
+  /* FR | EN: the language shown in black and bold, the other one as a link. */
+  .lang-switch {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--color-muted);
+    font-size: 14px;
+  }
+
+  .lang-switch button {
+    min-width: 28px;
+    min-height: 44px;
+    color: var(--color-muted);
+    text-decoration-line: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+  }
+
+  .lang-switch button[aria-pressed="true"] {
+    color: var(--color-black);
+    font-weight: 700;
+    text-decoration-line: none;
   }
 
   /* Date and the sentence counted on the cards. */

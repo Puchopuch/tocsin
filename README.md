@@ -1,7 +1,7 @@
 # Tocsin
 
-A public information service, in French, about the cyberattacks that touch the general public
-and businesses. Everything on the site is real: real attacks, real sources, updated by a
+A public information service, in French and in English, about the cyberattacks that touch the
+general public and businesses. Everything on the site is real: real attacks, real sources, updated by a
 collector. **Tocsin** is a provisional name (`APP_NAME` in `frontend/src/config.js`).
 
 | Folder | What it is |
@@ -63,11 +63,12 @@ npm run dev
 ```
 
 There is no other mode: `npm run dev` and `npm run build` read the real cards. Without a
-collection, the site says "Aucune attaque recensée pour le moment".
+collection, the site says "Aucune attaque recensée pour le moment" ("No attack recorded at the
+moment" in English).
 
 Each run ends with a summary: entries read per source, cards kept by level and by source, cards
-rejected with their reason, cards held back, AI calls (none in phase 1), and what happened to
-`cards.json`.
+rejected with their reason, cards held back, titles kept in French in the English version, AI
+calls (none in phase 1), and what happened to `cards.json`.
 
 ## What phase 1 publishes
 
@@ -79,7 +80,23 @@ rejected with their reason, cards held back, AI calls (none in phase 1), and wha
 
 Every card is made of fixed sentences filled with fields of its source (brief, part B6). A
 sentence longer than the limits of the site gives way to a generic one. What a source does not
-say stays empty, and the site shows "Non communiqué".
+say stays empty, and the site shows "Non communiqué" ("Not disclosed").
+
+### In French and in English
+
+The collector writes each text of a card in both languages, `{ "fr": "…", "en": "…" }`, without
+any translation service: every fixed sentence exists in French and in English, and the names of
+products, groups and organisations are the same in both. A shorter variant is chosen only if it
+fits the limits in both languages, so that both versions say the same thing.
+
+The title of a CERT-FR alert is the only text taken word for word from a French source. It is
+translated in its usual forms only ("Vulnérabilité dans X", "Multiples vulnérabilités dans les
+produits X"…), and only when the product name holds no French word. Otherwise translating it
+would mean inventing: the English version keeps the French title, the card carries
+`untranslated: ["title"]`, the site marks that title as French, and the run summary lists the
+card.
+
+The collector writes plain spaces; the site adds French typography to French texts only.
 
 ## Rules the code applies
 
@@ -89,10 +106,11 @@ say stays empty, and the site shows "Non communiqué".
   group. Of each ransomware.live entry, only the victim, the country, the group, the date and the
   ransomware.live page are kept; `post_url`, screenshots and the rest are dropped on reading.
 - A claim never goes above "Significative" (safety net applied last, then checked again).
-- Lengths: title of 10 words at most; victim, method and loot of 45 characters; "Suis-je
-  concerné ?" and "Que faire" of 75. A card that breaks a rule is rejected and logged.
-- No personal data: no e-mail address or phone number in a card, and a claim whose victim may be
-  a person is held back (see "Choices").
+- Lengths, in each language: title of 10 words at most; victim, method and loot of 45
+  characters; "Suis-je concerné ?" and "Que faire" of 75. A card that breaks a rule, or misses a
+  language, is rejected and logged.
+- No personal data: no e-mail address or phone number in a card, in either language, and a claim
+  whose victim may be a person is held back (see "Choices").
 - A failure never empties the site: if every source fails, or if the result is empty while the
   previous file had cards, the previous `cards.json` stays.
 - The file is written to a temporary file, then renamed.
