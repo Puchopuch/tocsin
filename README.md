@@ -102,18 +102,54 @@ The collector writes plain spaces; the site adds French typography to French tex
 
 - Nothing invented: each piece of information comes from a source; a source that gives a date
   without a time gets a date without a time.
-- Links come from the code: http(s) only, never a `.onion` address, never the site of a ransomware
-  group. Of each ransomware.live entry, only the victim, the country, the group, the date and the
-  ransomware.live page are kept; `post_url`, screenshots and the rest are dropped on reading.
+- Links: https only, to an ordinary host name, and each source to its own domain (CISA to
+  cisa.gov, NVD to nvd.nist.gov, CERT-FR to cert.cyber.gouv.fr, ransomware.live to
+  ransomware.live). Never `javascript:`, `data:`, `vbscript:`, `file:`, a link without scheme,
+  a user name or password, a port, a `.onion` or `xn--` name, an IP address, a space, a quote or
+  an angle bracket, whatever the case or the encoding. Of each ransomware.live entry, only the
+  victim, the country, the group, the date and the ransomware.live page are kept; `post_url`,
+  screenshots and the rest are dropped on reading.
 - A claim never goes above "Significative" (safety net applied last, then checked again).
 - Lengths, in each language: title of 10 words at most; victim, method and loot of 45
-  characters; "Suis-je concerné ?" and "Que faire" of 75. A card that breaks a rule, or misses a
-  language, is rejected and logged.
+  characters; "Suis-je concerné ?" and "Que faire" of 75; any text of 2,000 characters at most.
+  A card that breaks a rule, or misses a language, is rejected and logged.
 - No personal data: no e-mail address or phone number in a card, in either language, and a claim
   whose victim may be a person is held back (see "Choices").
-- A failure never empties the site: if every source fails, or if the result is empty while the
-  previous file had cards, the previous `cards.json` stays.
-- The file is written to a temporary file, then renamed.
+- A failure never empties the site, nor makes it lie about the time: if a source fails, if the
+  result is empty while the previous file had cards, or if the file cannot be written, the
+  previous `cards.json` stays, with its cards and the time of the last complete collection.
+- The file is written to a temporary file, flushed to disk, then renamed: a write cut in the
+  middle leaves the previous file whole.
+
+## Security
+
+**Requests** (`collector/sources/__init__.py`). The collector contacts four sites only
+(`ALLOWED_HOSTS` in `collector/config.py`), over https, on their usual port. It resolves their
+names itself and refuses a site whose name gives any private, local, link-local (such as the
+cloud metadata address 169.254.169.254), multicast or reserved address, in IPv4 or IPv6, IPv4
+written as IPv6 included; it then connects to an address it checked, while TLS still checks the
+certificate against the name. TLS is always verified (certifi, TLS 1.2 at least), and no proxy or
+setting is taken from the environment. Each redirect is checked the same way, and 3 at most are
+followed. Each network operation has 20 s, each request 60 s in all. An answer is read 20 MB at
+most once decompressed; only gzip is accepted, decompressed piece by piece, so that a compression
+bomb stops at the limit.
+
+**What the sources send.** The CERT-FR feed is read with defusedxml and no DTD at all, so that
+neither an XXE nor a "billion laughs" can go through. Broken JSON, XML or HTML, deep nesting,
+huge texts (more than 300 characters for a name or a title, 5,000 for a description), NUL bytes
+and invalid Unicode: the entry is skipped and counted, the collection goes on, and the error
+names a count, never the content. Control, invisible and bidi characters (U+202E, U+2066 to
+U+2069, zero-width spaces...) are taken out of every text, which is then normalised (NFC);
+`cards.json` refuses any that would remain.
+
+**Keys.** A key is read from `.env` or the environment, held as a `SecretStr` (shown as
+`**********`), sent in its header to its own API only (ransomware.live: `api-pro.ransomware.live`),
+never through a redirect, and never kept in `state.db`. Errors name the site and the kind of
+failure, never a request or its headers.
+
+**SQLite.** Every query is a fixed text with placeholders: a value never becomes SQL.
+`state.db` is only a cache: deleted or damaged, it starts again empty, and the next collection
+gives the same cards.
 
 ## Choices
 
@@ -146,8 +182,16 @@ The collector writes plain spaces; the site adds French typography to French tex
 - **Claims**: `reliability: "confirme"` (ransomware.live did record the claim) with the
   `revendique` status for the victim and the group (the attack itself is not confirmed), so that
   the site shows "Revendiqué, non confirmé" and not "Rumeur".
-- **Libraries**: httpx, pydantic, python-dotenv. feedparser, rapidfuzz and trafilatura will come
-  with the phases that need them; the single CERT-FR feed is read with the standard library.
+- **A source down**: when a source fails, the whole previous file stays rather than a mix of new
+  and old cards, so that "Mis à jour à" never claims a collection that did not happen. Without a
+  previous file (first collection), the cards of the other sources are written, and the summary
+  says so. The run ends with code 1 whenever a source failed.
+- **Names of the sources**: a card may only cite a source of `SOURCE_DOMAINS`
+  (`collector/config.py`), with a link to its domain. Phase 2 will add the press sites there.
+- **No proxy**: the collector ignores the proxy settings of the environment (`trust_env=False`),
+  so that no setting from outside can send its requests elsewhere.
+- **Libraries**: httpx, pydantic, python-dotenv, defusedxml (0.7.1, the last stable version).
+  feedparser, rapidfuzz and trafilatura will come with the phases that need them.
 
 ## Tests
 
@@ -159,6 +203,14 @@ They never reach the network and never touch the real `.env`, `state.db`, journa
 `cards.json`. The samples of `collector/tests/data/` are real extracts of the CISA catalogue and
 of the CERT-FR feed and pages. The ransomware.live sample is entirely invented, groups included,
 so that no real organisation or group is named in the repository.
+
+The security tests are in `test_network.py` (sites, addresses, redirects, TLS, time and size
+limits, compression bombs), `test_inputs.py` (XXE, billion laughs, broken inputs, hidden
+characters, links, SQL) and `test_secrets_resilience.py` (keys, interrupted writes, sources down,
+`state.db` deleted or damaged). `collector/tests/data/links.json` holds the links to refuse and
+to accept: the site checks the same cases (`npm run check`). The tests contain IP addresses on
+purpose (127.0.0.1, 169.254.169.254, 8.8.8.8...): loopback, private, metadata and public
+resolver addresses, none of them personal.
 
 ## Never committed
 

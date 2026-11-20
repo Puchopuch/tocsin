@@ -9,7 +9,7 @@ from collector import config
 from collector.models import Claim, host_is
 from collector.sources import SourceError, certfr, kev, ransomware_live, window_start
 
-from .helpers import FAKE_KEY, NOW, SOURCES, fetcher, sample
+from .helpers import FAKE_KEY, NOW, SOURCES, fake_key, fetcher, sample
 
 RECENT_KEV = {
     "CVE-2024-10441", "CVE-2026-40217", "CVE-2026-90817", "CVE-2026-90436",
@@ -104,7 +104,7 @@ def test_ransomware_live_asks_for_the_months_of_the_window():
 def test_ransomware_live_sends_the_key_in_its_header_only():
     seen = []
     with fetcher(SOURCES, seen) as client:
-        claims, read = ransomware_live.fetch(client, NOW, FAKE_KEY)
+        claims, read = ransomware_live.fetch(client, NOW, fake_key())
     request = seen[0]
     assert request.headers["X-API-KEY"] == FAKE_KEY
     assert FAKE_KEY not in str(request.url)
@@ -114,7 +114,9 @@ def test_ransomware_live_sends_the_key_in_its_header_only():
 
 def test_the_key_is_read_from_env(isolated):
     (isolated / ".env").write_text(f"{config.RANSOMWARE_LIVE_KEY}={FAKE_KEY}\n", encoding="utf-8")
-    assert ransomware_live.api_key() == FAKE_KEY
+    key = ransomware_live.api_key()
+    assert key.secret.get_secret_value() == FAKE_KEY
+    assert (key.header, key.host) == ("X-API-KEY", "api-pro.ransomware.live")
 
 
 def test_an_empty_key_counts_as_missing(isolated):

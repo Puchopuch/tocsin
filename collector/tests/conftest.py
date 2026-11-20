@@ -20,6 +20,13 @@ def no_network(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def no_pause(monkeypatch):
+    """The second between two requests to the same site has its own test (test_fetcher); the other
+    tests do not wait."""
+    monkeypatch.setattr(config, "SECONDS_BETWEEN_REQUESTS", 0.0)
+
+
+@pytest.fixture(autouse=True)
 def isolated(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "ROOT", tmp_path)
     monkeypatch.setattr(config, "OUTPUT_PATH", tmp_path / "frontend" / "public" / "data" / "cards.json")

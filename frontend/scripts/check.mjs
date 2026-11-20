@@ -17,8 +17,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
-import { build, preview } from 'vite';
+import { build, createServer, preview } from 'vite';
 import { APP_NAME } from '../src/config.js';
+import { safeUrl } from '../src/lib/format.js';
 import { LANG_KEY, UI } from '../src/lib/i18n.js';
 import { CLAIM_RULE, GRID, GRID_INTRO, LEVEL_NAMES, STATUS } from '../src/lib/severity.js';
 import { buildAlert, buildFeed, INVENTED_NAMES } from './fixtures.mjs';
@@ -137,6 +138,35 @@ await mkdir(captures, { recursive: true });
   report('Aucune donnée de test dans src/ : elles vivent dans scripts/fixtures.mjs', invented.length === 0, invented.join(', '));
 }
 
+// Security of the code: no HTML or script sink, and nothing read from the address, the referrer
+// or other windows, which could change what the page shows or where it reads its data.
+{
+  const SINKS = /dangerouslySetInnerHTML|\.(?:inner|outer)HTML\b|insertAdjacentHTML|document\.write|\beval\s*\(|\bnew\s+Function\b|\bFunction\s*\(|set(?:Timeout|Interval)\s*\(\s*['"`]|createContextualFragment|\bsrcdoc\b|parseFromString/;
+  const INPUTS = /\blocation\b|URLSearchParams|document\.referrer|window\.name|\bpostMessage\b|addEventListener\(\s*['"]message['"]/;
+  const sinks = [];
+  const inputs = [];
+  for (const file of (await filesIn(path.join(root, 'src'))).filter((name) => /\.(js|jsx)$/.test(name))) {
+    (await readFile(file, 'utf8')).split('\n').forEach((line, index) => {
+      const where = `${path.relative(root, file)}:${index + 1}`;
+      if (SINKS.test(line)) sinks.push(where);
+      if (INPUTS.test(line)) inputs.push(where);
+    });
+  }
+  report('Code du site : ni dangerouslySetInnerHTML, innerHTML, document.write, eval ni new Function', sinks.length === 0, sinks.join(', '));
+  report('Code du site : rien n’est lu dans l’adresse, le référent ou d’autres fenêtres', inputs.length === 0, inputs.join(', '));
+}
+
+// The site checks every link again, with the rules and the cases of the collector.
+{
+  const cases = JSON.parse(await readFile(path.join(root, '..', 'collector', 'tests', 'data', 'links.json'), 'utf8'));
+  const wrong = [...cases.refused.filter((url) => safeUrl(url) !== null), ...cases.accepted.filter((url) => safeUrl(url) === null)];
+  report(
+    `Liens revérifiés par le site : ${cases.refused.length} liens dangereux refusés (javascript:, data:, vbscript:, file:, //, identifiants, .onion, xn--, IP, majuscules, encodage, espaces), ${cases.accepted.length} liens https ordinaires gardés`,
+    wrong.length === 0,
+    wrong.map((url) => JSON.stringify(url)).join(' | '),
+  );
+}
+
 // Every text of the interface exists in both languages, with the same shape.
 {
   const problems = [];
@@ -179,39 +209,119 @@ await build({ root, logLevel: 'error', build: { outDir: out, emptyOutDir: true }
   report('Le site construit ne contient aucune donnée de test, ni « démo », « simulation » ou « fictif »', found.length === 0, found.slice(0, 6).join(' | '));
 }
 
+// The build holds the site and nothing else, and its page carries the strict CSP.
+{
+  const ALLOWED = [
+    /^index\.html$/,
+    /^assets\/index-[\w-]+\.(?:js|css)$/,
+    /^assets\/inria-sans-latin-(?:300|400|700)-normal-[\w-]+\.woff2$/,
+    /^data\/cards\.json$/,
+  ];
+  const names = (await filesIn(out)).map((file) => path.relative(out, file).split(path.sep).join('/'));
+  const unexpected = names.filter((name) => !ALLOWED.some((pattern) => pattern.test(name)));
+  report('Build : seulement la page, ses scripts, styles et polices, et data/cards.json', unexpected.length === 0 && names.includes('index.html'), unexpected.join(', ') || `${names.length} fichiers`);
+
+  const SECRETS = /RANSOMWARE_LIVE_API_KEY|MISTRAL_API_KEY|X-API-KEY|api-pro\.ransomware\.live|state\.db|collector\.log|fixtures\.mjs|PRIVATE KEY/;
+  const leaks = [];
+  for (const file of await filesIn(out)) {
+    if (file.endsWith('.woff2')) continue;
+    const found = SECRETS.exec(await readFile(file, 'utf8'));
+    if (found) leaks.push(`${path.relative(out, file)} : ${found[0]}`);
+  }
+  report('Build : aucune clé ni nom de clé, aucune trace de .env, state.db, journal ou données de test', leaks.length === 0, leaks.join(' | '));
+
+  const html = await readFile(path.join(out, 'index.html'), 'utf8');
+  const scripts = html.match(/<script\b[^>]*>/g) ?? [];
+  const handlers = html.match(/\son[a-z]+\s*=/gi) ?? [];
+  report('index.html construit : un seul script, chargé depuis le site, aucun script en ligne ni attribut on…=', scripts.length === 1 && /\bsrc="\.\/assets\//.test(scripts[0]) && handlers.length === 0, scripts.join(' '));
+
+  const policy = /<meta http-equiv="Content-Security-Policy" content="([^"]+)"/.exec(html)?.[1] ?? '';
+  const directives = Object.fromEntries(
+    policy
+      .split(';')
+      .map((part) => part.trim().split(/\s+/))
+      .filter((words) => words[0])
+      .map(([name, ...values]) => [name, values.join(' ')]),
+  );
+  const EXPECTED = {
+    'default-src': "'self'",
+    'script-src': "'self'",
+    'connect-src': "'self'",
+    'object-src': "'none'",
+    'base-uri': "'none'",
+    'form-action': "'none'",
+    'require-trusted-types-for': "'script'",
+    'trusted-types': "'none'",
+  };
+  const wrong = Object.entries(EXPECTED)
+    .filter(([name, value]) => directives[name] !== value)
+    .map(([name]) => `${name} = ${directives[name] ?? 'absente'}`);
+  report(
+    'CSP du build : script-src \'self\' sans unsafe-inline ni unsafe-eval ; object-src, base-uri, form-action \'none\' ; connect-src \'self\' ; Trusted Types exigés',
+    wrong.length === 0,
+    wrong.join(' | ') || policy,
+  );
+}
+
 const previewServer = await preview({ root, logLevel: 'error', build: { outDir: out }, preview: { port: 4199, strictPort: false } });
 const base = previewServer.resolvedUrls.local[0];
 const browser = await chromium.launch({ channel: process.env.CHECK_BROWSER || undefined });
 const offsite = [];
+const violations = [];
+const dialogs = [];
+
+// The dev and preview servers answer this computer only, never the local network.
+{
+  const dev = await createServer({ root, logLevel: 'error', server: { port: 5199, strictPort: false } });
+  await dev.listen();
+  const devAddress = dev.httpServer.address();
+  await dev.close();
+  const previewAddress = previewServer.httpServer.address();
+  report(
+    'Serveurs de développement et de prévisualisation : 127.0.0.1 seulement',
+    devAddress.address === '127.0.0.1' && previewAddress.address === '127.0.0.1',
+    `${devAddress.address}:${devAddress.port} ; ${previewAddress.address}:${previewAddress.port}`,
+  );
+}
 
 /**
  * A page of the built site. `feed` stands for data/cards.json: an object, an HTTP status, raw
  * text, a function returning one of these at each request, or null for the real file. `timers`:
  * "fixed" (the date is NOW), "fake" (NOW, and time moves only when the test says so) or "real".
  */
-async function openPage({ feed = usual, width = 1440, height = 900, reduce = false, waitFor = CARDS, timers = 'fixed', locale = 'fr-FR', stored } = {}) {
+async function openPage({ feed = usual, width = 1440, height = 900, reduce = false, waitFor = CARDS, timers = 'fixed', locale = 'fr-FR', stored, address = '', seenViolations = violations } = {}) {
   const context = await browser.newContext({
     viewport: { width, height },
     reducedMotion: reduce ? 'reduce' : 'no-preference',
     locale,
     timezoneId: 'Europe/Paris',
   });
+  // Every page reports the CSP and Trusted Types violations it meets.
+  await context.addInitScript(() => {
+    document.addEventListener('securitypolicyviolation', (event) => console.error(`CSP violation: ${event.violatedDirective} ${event.blockedURI}`));
+  });
   if (stored !== undefined) {
     await context.addInitScript(([key, value]) => window.localStorage.setItem(key, value), [LANG_KEY, stored]);
   }
   const page = await context.newPage();
   const errors = [];
-  const requests = { feed: 0 };
+  const requests = { feed: 0, urls: [] };
   page.on('request', (request) => {
     const url = new URL(request.url());
     if (!['data:', 'blob:'].includes(url.protocol) && url.origin !== new URL(base).origin) offsite.push(url.href);
   });
   page.on('console', (message) => {
     if (message.type() === 'error') errors.push(message.text());
+    if (/Content.Security.Policy|CSP violation|Trusted ?Type/i.test(message.text())) seenViolations.push(message.text());
   });
   page.on('pageerror', (error) => errors.push(String(error)));
+  page.on('dialog', (dialog) => {
+    dialogs.push(dialog.message());
+    dialog.dismiss().catch(() => {});
+  });
   await page.route('**/data/cards.json', (route) => {
     requests.feed += 1;
+    requests.urls.push(route.request().url());
     const current = typeof feed === 'function' ? feed() : feed;
     if (current === null) return route.continue();
     if (typeof current === 'number') return route.fulfill({ status: current, contentType: 'text/plain', body: 'Not found' });
@@ -222,7 +332,7 @@ async function openPage({ feed = usual, width = 1440, height = 900, reduce = fal
   });
   if (timers === 'fixed') await page.clock.setFixedTime(NOW);
   if (timers === 'fake') await page.clock.install({ time: NOW });
-  await page.goto(base);
+  await page.goto(base + address);
   if (waitFor) await page.waitForSelector(waitFor);
   await page.evaluate(() => document.fonts.ready);
   return { context, page, errors, requests };
@@ -732,6 +842,199 @@ try {
     report('Aucune erreur dans la console, CSP comprise', errors.length === 0, errors.join(' | '));
   }
 
+  // Security: hostile cards and search, hostile address and storage, huge or broken files.
+  {
+    const PAYLOADS = [
+      '<script>window.__xss = 1; alert("xss")</script>',
+      '<img src=x onerror="window.__xss = 1; alert(\'xss\')">',
+      '<svg onload="window.__xss = 1; alert(\'xss\')"></svg>',
+      '"><img src=x onerror=alert(1)>',
+      "'><svg/onload=alert(1)>",
+      'javascript:alert(1)',
+      '<iframe srcdoc="<script>alert(1)</script>"></iframe>',
+      '<a href="javascript:alert(1)">lien</a>',
+    ];
+    const LINKS = [
+      'javascript:alert(1)',
+      'JAVASCRIPT:alert(1)',
+      ' javascript:alert(1)',
+      'data:text/html,<script>alert(1)</script>',
+      'vbscript:msgbox(1)',
+      'file:///C:/Windows/win.ini',
+      '//evil.example/x',
+      'https://user:pass@example.org/',
+      'https://abcdefgh.onion/',
+      'https://xn--80ak6aa92e.com/',
+      'https://example.org/"onmouseover="alert(1)',
+      'https://example.org/sain',
+    ];
+    let count = 0;
+    const payload = () => PAYLOADS[count++ % PAYLOADS.length];
+    const both = () => ({ fr: payload(), en: payload() });
+    const hostile = structuredClone(usual);
+    hostile.attacks.forEach((card, index) => {
+      Object.assign(card, {
+        title: both(),
+        lede: both(),
+        severity_reason: both(),
+        method: both(),
+        loot: both(),
+        am_i_affected: both(),
+        action: both(),
+        sector: both(),
+        reliability_source: payload(),
+        summary: [both(), both()],
+        protection_steps: [both(), both()],
+        timeline: (card.timeline ?? []).map((event) => ({ ...event, label: both() })),
+        victim: { ...card.victim, label: both() },
+        attacker: { name: both(), country: both(), status: 'presume', source: payload() },
+        technical: { cves: [payload(), 'CVE-2026-1234'], software: [both()], techniques: [{ id: payload(), name: payload() }, { id: 'T1566', name: both() }] },
+        sources: LINKS.map((url, i) => ({ name: payload(), title: both(), url, official: i % 2 === 0 })),
+      });
+      if (index === 1) card.id = 'x"><img src=x onerror=alert(1)>';
+    });
+
+    const anchors = [];
+    const visit = async (locale) => {
+      const { context, page, errors } = await openPage({ feed: hostile, locale });
+      for (const opener of await page.locator('[id^="lire-"]').all()) {
+        await opener.click();
+        await page.waitForSelector('[role="dialog"]');
+        anchors.push(...(await page.$$eval('[role="dialog"] a[href]', (list) => list.map((a) => ({ href: a.getAttribute('href'), target: a.target, rel: a.rel })))));
+        await page.keyboard.press('Escape');
+        await page.waitForSelector('[role="dialog"]', { state: 'detached' });
+      }
+      await page.click('.site-footer .link');
+      await page.waitForSelector('[role="dialog"]');
+      await page.keyboard.press('Escape');
+      await page.waitForSelector('[role="dialog"]', { state: 'detached' });
+      for (const text of PAYLOADS) {
+        await page.fill('#search', text);
+        await page.waitForTimeout(50);
+      }
+      await page.fill('#search', '');
+      const state = await page.evaluate(() => ({
+        xss: window.__xss ?? 0,
+        scripts: document.querySelectorAll('script').length,
+        inline: [...document.scripts].filter((script) => !script.src).length,
+        injected: document.querySelectorAll('img, svg, iframe, object, embed, [onerror], [onload], [onmouseover], [srcdoc]').length,
+        shownAsText: document.body.innerText.includes('<img src=x onerror'),
+        cookie: document.cookie,
+      }));
+      const cookies = await context.cookies();
+      await context.close();
+      return { ...state, cookies: cookies.length, errors: errors.filter((error) => !/Failed to load resource/.test(error)).length };
+    };
+    const fr = await visit('fr-FR');
+    const en = await visit('en-GB');
+    report(
+      'XSS : <script>, <img onerror>, <svg onload>, javascript: dans chaque champ de cards.json et dans la recherche, en français et en anglais : aucune boîte de dialogue, aucun élément créé, texte affiché tel quel',
+      dialogs.length === 0 && [fr, en].every((s) => s.xss === 0 && s.injected === 0 && s.inline === 0 && s.scripts === 1 && s.shownAsText && s.errors === 0),
+      JSON.stringify({ dialogs: dialogs.length, fr, en }),
+    );
+    const hrefs = [...new Set(anchors.map((anchor) => anchor.href))].sort();
+    const badLinks = anchors.filter((a) => a.target !== '_blank' || !a.rel.split(/\s+/).includes('noopener') || !a.rel.split(/\s+/).includes('noreferrer'));
+    report(
+      'Liens des cartes piégées : seuls https://example.org/sain et attack.mitre.org restent, tous en target="_blank" rel="noopener noreferrer"',
+      badLinks.length === 0 && JSON.stringify(hrefs) === JSON.stringify(['https://attack.mitre.org/techniques/T1566/', 'https://example.org/sain']),
+      hrefs.join(' '),
+    );
+    report('Aucun cookie, ni lu ni posé', [fr, en].every((s) => s.cookie === '' && s.cookies === 0));
+  }
+
+  // Control: in the built page, the CSP and Trusted Types really block innerHTML, eval, new
+  // Function and inline scripts, and each block is seen by the checks above.
+  {
+    const seen = [];
+    const { context, page } = await openPage({ seenViolations: seen });
+    // The attempts run from a timer, as page code: code run directly by the test tool is exempt
+    // from the eval rule of the CSP.
+    const blocked = await page.evaluate(() => new Promise((resolve) => setTimeout(() => {
+      const attempts = {
+        innerHTML: () => {
+          document.body.appendChild(document.createElement('div')).innerHTML = '<img src=x>';
+        },
+        eval: () => window.eval('1 + 1'),
+        newFunction: () => new Function('return 1')(),
+        inlineScript: () => {
+          const script = document.createElement('script');
+          script.textContent = 'window.__inline = 1';
+          document.body.append(script);
+        },
+      };
+      resolve(
+        Object.fromEntries(
+          Object.entries(attempts).map(([name, attempt]) => {
+            try {
+              attempt();
+              return [name, false];
+            } catch {
+              return [name, true];
+            }
+          }),
+        ),
+      );
+    }, 0)));
+    await page.waitForTimeout(300);
+    const ran = await page.evaluate(() => ({ inline: window.__inline ?? 0, img: document.querySelectorAll('img').length }));
+    await context.close();
+    report(
+      'Contrôle : la page construite bloque innerHTML, eval, new Function et les scripts en ligne, et chaque blocage est vu',
+      Object.values(blocked).every(Boolean) && ran.inline === 0 && ran.img === 0 && seen.length >= 4,
+      `${JSON.stringify(blocked)} ; ${seen.length} violation(s) vue(s)`,
+    );
+  }
+
+  // No address parameter or fragment changes the data source.
+  {
+    const { context, page, requests } = await openPage({
+      address: '?data=https://evil.example/cards.json&src=//evil.example/x.json&feed=data:application/json,{}#https://evil.example/cards.json',
+    });
+    const tabs = await tabTexts(page);
+    await context.close();
+    const feedUrl = new URL('data/cards.json', base).href;
+    report(
+      'Paramètres et fragment d’adresse ignorés : les données viennent toujours de data/cards.json du site',
+      requests.urls.length > 0 && requests.urls.every((url) => url === feedUrl) && tabs[0] === 'Toutes 8',
+      `${[...new Set(requests.urls)].join(' ')} ; ${tabs[0]}`,
+    );
+  }
+
+  // Stored language: only "fr" or "en", anything else is ignored.
+  {
+    const seen = [];
+    for (const stored of ['<img src=x onerror=alert(1)>', 'EN', 'en ', '"en"', 'javascript:alert(1)', '__proto__']) {
+      const { context, page } = await openPage({ stored });
+      seen.push(await page.evaluate(() => ({ lang: document.documentElement.lang, img: document.querySelectorAll('img').length })));
+      await context.close();
+    }
+    report('Valeur de langue trafiquée dans localStorage : ignorée, sans effet', seen.every((s) => s.lang === 'fr' && s.img === 0), JSON.stringify(seen));
+  }
+
+  // A huge, deeply nested, oddly shaped or unreadable cards.json: a clear message, no crash.
+  {
+    const huge = structuredClone(usual);
+    huge.attacks[0].summary = [{ fr: 'x'.repeat(6 * 1024 * 1024), en: 'x' }];
+    const cases = {
+      'énorme (6 Mo)': JSON.stringify(huge),
+      'imbriqué 200 000 fois': '['.repeat(200_000) + ']'.repeat(200_000),
+      'attaques qui ne sont pas une liste': JSON.stringify({ generated_at: usual.generated_at, attacks: 'aucune' }),
+      'tableau seul': '[]',
+      'caractères nuls': '\u0000\u0000{',
+    };
+    const states = {};
+    for (const [name, body] of Object.entries(cases)) {
+      const { context, page, errors } = await openPage({ feed: body, waitFor: '.state' });
+      states[name] = { state: clean(await page.locator('.state').first().textContent()).slice(0, 40), errors: errors.length };
+      await context.close();
+    }
+    report(
+      'cards.json énorme, trop imbriqué, de forme inattendue ou illisible : « Impossible de charger les attaques… », aucun plantage',
+      Object.values(states).every((s) => s.state.startsWith('Impossible de charger les attaques') && s.errors === 0),
+      JSON.stringify(states),
+    );
+  }
+
   // The real cards, when the collector has written them, in French and in English.
   if (existsSync(realFile)) {
     const real = JSON.parse(await readFile(realFile, 'utf8'));
@@ -770,6 +1073,8 @@ try {
 }
 
 report('Aucune requête vers un autre domaine', offsite.length === 0, [...new Set(offsite)].join(' '));
+report('Aucune violation de la CSP ni des Trusted Types, sur toutes les pages ouvertes', violations.length === 0, [...new Set(violations)].slice(0, 3).join(' | '));
+report('Aucune boîte de dialogue ouverte, sur toutes les pages ouvertes', dialogs.length === 0, dialogs.slice(0, 3).join(' | '));
 
 const failed = results.filter((ok) => !ok).length;
 console.log(`\n${results.length - failed}/${results.length} vérifications réussies. Captures : ${captures}`);

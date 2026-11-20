@@ -5,12 +5,13 @@ from __future__ import annotations
 
 import re
 from datetime import date, datetime, timedelta
-from typing import Literal
+from typing import Annotated, Literal
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from . import config
+from .text import is_plain
 
 Level = Literal["critique", "grave", "significative", "mineure"]
 Audience = Literal["grand_public", "entreprises", "les_deux"]
@@ -20,17 +21,27 @@ DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
 CVE = re.compile(r"CVE-\d{4}-\d{4,}")
 EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 PHONE = re.compile(r"(?<![\w+])(?:\+\d{2,3}[\s.-]?\d|0\d)(?:[\s.-]?\d{2}){4}(?!\d)")
+LABEL = r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
+HOST = re.compile(rf"{LABEL}(?:\.{LABEL})+")
+UNSAFE_CHARS = frozenset('\\"<>`{}|^')  # never in a written link: RFC 3986 wants them encoded
 
 
-def is_safe_url(url: str) -> bool:
-    """http(s) only, with a host, never a .onion address, never a user name or a password."""
-    try:
-        parts = urlsplit(url)
-        host = (parts.hostname or "").lower().rstrip(".")
-        credentials = parts.username is not None or parts.password is not None
-    except ValueError:
+def is_safe_url(url: object) -> bool:
+    """A link a card may carry: https only, written in plain ASCII without space, control
+    character, backslash, quote or angle bracket, to a host name without user name, password or
+    port. Never javascript:, data:, vbscript:, file: or a link without scheme (//), in capitals,
+    encoded or after spaces; never a .onion address, an internationalised (xn--) name or an IP
+    address."""
+    if not isinstance(url, str) or len(url) > config.MAX_URL or not url.startswith("https://"):
         return False
-    return parts.scheme in ("http", "https") and bool(host) and not host.endswith(".onion") and not credentials
+    if any(not "\x21" <= char <= "\x7e" or char in UNSAFE_CHARS for char in url):
+        return False
+    authority = re.split(r"[/?#]", url[len("https://"):], maxsplit=1)[0]
+    host = authority.lower().removesuffix(".")
+    if not HOST.fullmatch(host):
+        return False  # also refuses "@" (user, password), ":" (port), "%" (encoding) and "[" (IPv6)
+    labels = host.split(".")
+    return labels[-1] != "onion" and not labels[-1].isdigit() and not any(label.startswith("xn--") for label in labels)
 
 
 def host_is(url: str, domain: str) -> bool:
@@ -40,6 +51,17 @@ def host_is(url: str, domain: str) -> bool:
     except ValueError:
         return False
     return host == domain or host.endswith("." + domain)
+
+
+def plain(value: str) -> str:
+    """What the collector cleaned stays clean: no control, invisible or bidi character, NFC."""
+    if not is_plain(value):
+        raise ValueError("caractère de contrôle, invisible ou bidirectionnel, ou Unicode non normalisé")
+    return value
+
+
+# A text of cards.json: plain, and MAX_TEXT characters at most.
+Plain = Annotated[str, Field(max_length=config.MAX_TEXT), AfterValidator(plain)]
 
 
 def check_moment(value: str) -> str:
@@ -64,9 +86,9 @@ class Model(BaseModel):
 class KevEntry(Model):
     """One entry of the CISA catalogue."""
 
-    cve: str
-    vendor: str
-    product: str
+    cve: str = Field(pattern=r"^CVE-\d{4}-\d{4,7}$")
+    vendor: str = Field(min_length=1)
+    product: str = Field(min_length=1)
     name: str = ""
     description: str = ""
     date_added: date
@@ -101,8 +123,8 @@ class Text(Model):
     """A text of the card, in French and in English. Both are required: the site never shows a
     missing text in one language."""
 
-    fr: str = Field(min_length=1)
-    en: str = Field(min_length=1)
+    fr: Plain = Field(min_length=1)
+    en: Plain = Field(min_length=1)
 
 
 LANGUAGES = {"fr": "en français", "en": "en anglais"}
@@ -121,7 +143,7 @@ class Attacker(Model):
     name: Text | None = None
     country: Text | None = None
     status: Status
-    source: str | None = None
+    source: Plain | None = None
 
     @model_validator(mode="after")
     def _country_has_source(self) -> Attacker:
@@ -152,13 +174,13 @@ class Event(Model):
 
 
 class Technique(Model):
-    id: str = Field(min_length=1)
-    name: str = ""
+    id: str = Field(pattern=r"^T\d{4}(?:\.\d{3})?$")
+    name: Plain = ""
 
 
 class Technical(Model):
     cves: list[str] = Field(default_factory=list)
-    software: list[str] = Field(default_factory=list)
+    software: list[Plain] = Field(default_factory=list)
     techniques: list[Technique] = Field(default_factory=list)
 
     @field_validator("cves")
@@ -171,7 +193,7 @@ class Technical(Model):
 
 
 class Source(Model):
-    name: str = Field(min_length=1)
+    name: Plain = Field(min_length=1)
     title: Text | None = None
     url: str
     official: bool = False
@@ -180,19 +202,29 @@ class Source(Model):
     @classmethod
     def _url(cls, value: str) -> str:
         if not is_safe_url(value):
-            raise ValueError("lien refusé : http(s) seulement, jamais d'adresse .onion")
+            raise ValueError("lien refusé : https vers un nom de site ordinaire seulement")
         return value
+
+    @model_validator(mode="after")
+    def _url_of_its_source(self) -> Source:
+        # Each source links to its own site only: a CERT-FR source to cert.cyber.gouv.fr, etc.
+        domain = config.SOURCE_DOMAINS.get(self.name)
+        if domain is None:
+            raise ValueError(f"source inconnue : {self.name}")
+        if not host_is(self.url, domain):
+            raise ValueError(f"lien de {self.name} hors de {domain}")
+        return self
 
 
 class Card(Model):
-    id: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9-]*$")
+    id: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9-]*$", max_length=100)
     severity: Level
     severity_reason: Text
     title: Text
     first_seen: str
     audience: Audience
     reliability: Literal["confirme", "rumeur"]
-    reliability_source: str | None = None
+    reliability_source: Plain | None = None
     # True only when a source confirms that the flaw is already exploited (the CISA catalogue).
     exploited: bool = False
     attacker: Attacker | None = None

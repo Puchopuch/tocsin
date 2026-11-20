@@ -10,10 +10,13 @@ import { typo } from './lib/typo.js';
 
 const env = import.meta.env ?? {};
 
+// The only data source: no URL parameter, hash or stored value can change it.
 const FEED_URL = `${env.BASE_URL ?? '/'}data/cards.json`;
 const AUDIENCES = ['grand_public', 'entreprises', 'les_deux'];
 /** The file is read again every 5 minutes, and whenever the tab comes back into view. */
 const REFRESH = 5 * 60_000;
+/** A larger file is not a feed of the collector: it is refused rather than read. */
+export const MAX_FEED_BYTES = 5 * 1024 * 1024;
 const DAY_ONLY = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 /**
@@ -149,7 +152,10 @@ async function loadFeed(signal) {
   // No file yet: a 404, or the HTML page that some servers send in its place.
   if (response.status === 404 || (response.ok && type.includes('text/html'))) return EMPTY;
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return { status: 'ready', ...readFeed(await response.json()) };
+  if (Number(response.headers.get('content-length')) > MAX_FEED_BYTES) throw new Error('Feed too large');
+  const text = await response.text();
+  if (text.length > MAX_FEED_BYTES) throw new Error('Feed too large');
+  return { status: 'ready', ...readFeed(JSON.parse(text)) };
 }
 
 const sameFeed = (a, b) => a.status === b.status && a.generatedAt?.getTime() === b.generatedAt?.getTime();

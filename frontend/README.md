@@ -121,7 +121,10 @@ The page is defensive about the feed:
 - a card without an explicit `reliability: "confirme"` is treated as a rumour;
 - a claimed attack or a rumour is never shown above "Significative";
 - an attacker name without a status is shown as "Présumé, non confirmé";
-- links other than `http(s)`, and `.onion` addresses, are dropped;
+- links are checked again with the rules of the collector (https only, an ordinary host name, no
+  user name, password, port, `.onion`, `xn--` or IP address, no space, quote or angle bracket),
+  and dropped otherwise;
+- a file over 5 MB, or that is not a feed, gives the error message;
 - an entry without `id`, title, valid level or date is skipped.
 
 ## Layout of the code
@@ -208,6 +211,19 @@ footer says the cards are built by fixed rules, without AI. No request to anothe
 are self-hosted, and built pages carry a Content-Security-Policy. No link to ransomware sites or
 stolen data.
 
+Security:
+- **Content-Security-Policy** of built pages (`vite.config.js`): `script-src 'self'`, without
+  `unsafe-inline` or `unsafe-eval`; `object-src`, `base-uri` and `form-action 'none'`;
+  `connect-src 'self'`; Trusted Types required (`require-trusted-types-for 'script'`) and no
+  policy allowed (`trusted-types 'none'`). The only script is the bundle, loaded from the site.
+  `frame-ancestors` and the other headers will be HTTP headers of the host.
+- **Texts** are always rendered as text by React: no `innerHTML`, `dangerouslySetInnerHTML`,
+  `document.write`, `eval` or `new Function` in `src/`.
+- **Inputs**: the data come from `data/cards.json` of the site only; nothing is read from the
+  address, the referrer or other windows; the stored language accepts `fr` or `en` only. No
+  cookie.
+- **Dev and preview servers** listen on 127.0.0.1 only, never on the local network.
+
 ## Checks
 
 `npm run check` builds the site into a temporary folder with the configuration of
@@ -229,6 +245,16 @@ pages run at a fixed moment, Friday 20 November 2026 at 15:00 in Paris. It cover
 - "Non communiqué", colours, shadows, gradients, corners, font, sizes and weights;
 - the absence of animations, the panel, keyboard path and reduced motion;
 - links, the Content-Security-Policy, and that no request goes to another domain;
+- security: no HTML or script sink and no read of the address in `src/`; the links of
+  `collector/tests/data/links.json`, refused or kept as by the collector; the files of the build
+  (a list of allowed names, no key, no trace of `.env`, `state.db` or test data); `index.html`
+  without inline script; the CSP, directive by directive, and a control that it really blocks
+  `innerHTML`, `eval`, `new Function` and inline scripts; `<script>`, `<img onerror>`,
+  `<svg onload>` and `javascript:` in every field of the cards and in the search, in both
+  languages (no dialog, no element created, the text shown as it is); links in `_blank` with
+  `noopener noreferrer`; no cookie; address parameters ignored; a forged stored language
+  ignored; a huge, nested or odd `cards.json`; the dev and preview servers on 127.0.0.1; and,
+  over every page opened, no CSP or Trusted Types violation and no dialog;
 - the real cards of `public/data/cards.json`, when the collector has written them.
 
 It also saves screenshots in `captures/` (ignored by git), at 1440 and 390px wide, in French

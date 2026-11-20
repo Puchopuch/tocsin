@@ -25,6 +25,31 @@ RANSOMWARE_LIVE_API = "https://api-pro.ransomware.live"
 RANSOMWARE_LIVE_HOST = "ransomware.live"
 RANSOMWARE_LIVE_KEY = "RANSOMWARE_LIVE_API_KEY"
 
+# Safety of the requests. The collector contacts these sites only, over https, at public addresses
+# only; it follows 3 redirects at most, and never one with a key; it reads 20 MB at most once
+# decompressed, and gives up on a request after 60 s in all.
+ALLOWED_HOSTS = frozenset({
+    "www.cisa.gov", "cert.cyber.gouv.fr", "www.cert.cyber.gouv.fr", "api-pro.ransomware.live",
+})
+MAX_REDIRECTS = 3
+MAX_RESPONSE_BYTES = 20 * 1024 * 1024
+TOTAL_SECONDS = 60.0
+
+# Longest texts accepted from a source: a longer one is a broken entry, skipped.
+MAX_NAME = 300  # vendor, product, flaw name, alert title, victim, group
+MAX_DESCRIPTION = 5_000
+MAX_URL = 2_000
+# Longest text of a card, in each language (cards.json).
+MAX_TEXT = 2_000
+
+# The domain that the links of each source of a card must point to.
+SOURCE_DOMAINS = {
+    "CISA": "cisa.gov",
+    "NVD": "nvd.nist.gov",
+    "CERT-FR": CERTFR_HOST,
+    "ransomware.live": RANSOMWARE_LIVE_HOST,
+}
+
 # Lengths of frontend/README.md (B5 rule 5).
 MAX_TITLE_WORDS = 10
 MAX_SHORT = 45  # victim, method, loot

@@ -1,5 +1,5 @@
 """CISA catalogue of Known Exploited Vulnerabilities (B4): the flaws added in the last 7 days
-(field dateAdded)."""
+(field dateAdded). A broken entry is skipped and counted; the rest of the catalogue is kept."""
 
 from __future__ import annotations
 
@@ -7,10 +7,9 @@ import json
 import logging
 from datetime import datetime
 
-from pydantic import ValidationError
-
 from .. import config
 from ..models import KevEntry
+from ..text import clean
 from . import Fetcher, SourceError, window_start
 
 NAME = "CISA, failles exploitées"
@@ -20,23 +19,27 @@ log = logging.getLogger(__name__)
 def parse(body: bytes) -> list[KevEntry]:
     try:
         rows = json.loads(body)["vulnerabilities"]
-    except (ValueError, KeyError, TypeError):
+    except (ValueError, KeyError, TypeError, RecursionError):
         raise SourceError("CISA : catalogue illisible") from None
-    entries = []
+    if not isinstance(rows, list):
+        raise SourceError("CISA : catalogue illisible")
+    entries, broken = [], 0
     for raw in rows:
         try:
             entries.append(KevEntry(
-                cve=raw["cveID"],
-                vendor=raw["vendorProject"].strip(),
-                product=raw["product"].strip(),
-                name=raw.get("vulnerabilityName") or "",
-                description=raw.get("shortDescription") or "",
-                date_added=raw["dateAdded"],
-                due_date=raw.get("dueDate") or None,
-                ransomware=raw.get("knownRansomwareCampaignUse") or "",
+                cve=clean(raw["cveID"], 20),
+                vendor=clean(raw["vendorProject"], config.MAX_NAME),
+                product=clean(raw["product"], config.MAX_NAME),
+                name=clean(raw.get("vulnerabilityName"), config.MAX_NAME),
+                description=clean(raw.get("shortDescription"), config.MAX_DESCRIPTION),
+                date_added=clean(raw["dateAdded"], 10),
+                due_date=clean(raw.get("dueDate"), 10) or None,
+                ransomware=clean(raw.get("knownRansomwareCampaignUse"), 20),
             ))
-        except (KeyError, TypeError, AttributeError, ValidationError):
-            log.warning("CISA : entrée illisible ignorée")
+        except (KeyError, TypeError, AttributeError, ValueError):
+            broken += 1  # ValueError covers BrokenText and the validation of KevEntry
+    if broken:
+        log.warning("CISA : %d entrée(s) illisible(s) ignorée(s)", broken)
     return entries
 
 

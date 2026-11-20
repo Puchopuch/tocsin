@@ -1,6 +1,9 @@
 """Validation and writing of cards.json (B10). Each card is checked against Card; the attacks of
 the last 7 days are written newest first, with the time of the collection in UTC, through a
-temporary file and a rename; and a full file is never replaced by an empty one (B5 rule 9)."""
+temporary file flushed to disk and then renamed, so that a write cut in the middle leaves the
+previous file whole. A full file is never replaced by an empty one (B5 rule 9), nor by the result
+of a collection where a source failed: the previous cards and the time of the last complete
+collection stay."""
 
 from __future__ import annotations
 
@@ -70,11 +73,24 @@ def attacks_in(path: Path) -> int:
         return 0
 
 
+def readable(path: Path) -> bool:
+    """True when the current file exists and is a valid feed."""
+    try:
+        Feed.model_validate(json.loads(path.read_text(encoding="utf-8")))
+    except (OSError, ValueError):
+        return False
+    return True
+
+
 def write(path: Path, data: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.tmp")
-    temporary.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    text = json.dumps(data, ensure_ascii=False, indent=2) + "\n"
     try:
+        with open(temporary, "w", encoding="utf-8", newline="\n") as file:
+            file.write(text)
+            file.flush()
+            os.fsync(file.fileno())
         for attempt in range(10):
             try:
                 os.replace(temporary, path)
@@ -88,17 +104,28 @@ def write(path: Path, data: dict) -> None:
 
 
 def publish(
-    path: Path, cards: list[dict], now: datetime, *, sources_ok: int, dry_run: bool = False
+    path: Path,
+    cards: list[dict],
+    now: datetime,
+    *,
+    sources_ok: int,
+    sources_failed: int = 0,
+    dry_run: bool = False,
 ) -> tuple[str, dict | None]:
-    """Write cards.json, unless that would empty the site (B5 rule 9). Returns what happened, and
-    the data written or that would have been written."""
+    """Write cards.json, unless that would empty the site (B5 rule 9) or a source failed while the
+    current file is sound. Returns what happened, and the data written or that would have been
+    written."""
     if sources_ok == 0:
         return "gardé tel quel : toutes les sources ont échoué", None
     data = feed(cards, now)
+    if sources_failed and readable(path):
+        return "gardé tel quel : une source a échoué, les cartes et l'heure de la dernière collecte complète restent", data
     previous = attacks_in(path)
     if not data["attacks"] and previous:
         return f"gardé tel quel : aucune carte, alors qu'il en contient {previous}", data
     if dry_run:
         return "rien d'écrit (--dry-run)", data
     write(path, data)
+    if sources_failed:
+        return "écrit sans la source en échec, faute de fichier précédent à garder", data
     return "écrit", data

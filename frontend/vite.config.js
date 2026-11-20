@@ -11,8 +11,10 @@ const appName = {
 
 // Content-Security-Policy added to built pages only (the dev server needs inline scripts for hot
 // reload). Scripts, styles, fonts and data/cards.json all come from the site itself, and the
-// browser refuses any request to another domain. Inline styles are allowed because React and
-// motion set style attributes.
+// browser refuses any request to another domain. No inline script and no eval. Trusted Types:
+// no string can reach a script or HTML sink (innerHTML and the like), and no policy may be created
+// to allow one. Inline styles are allowed because React and motion set style attributes.
+// frame-ancestors, ignored in a <meta> tag, will be an HTTP header of the host.
 const CSP = [
   "default-src 'self'",
   "script-src 'self'",
@@ -23,6 +25,8 @@ const CSP = [
   "object-src 'none'",
   "base-uri 'none'",
   "form-action 'none'",
+  "require-trusted-types-for 'script'",
+  "trusted-types 'none'",
 ];
 
 // The tag is written by hand, right after <meta charset>, so that the quotes of the policy stay
@@ -45,4 +49,7 @@ export default defineConfig({
   base: './',
   plugins: [react(), tailwindcss(), appName, contentSecurityPolicy],
   build: { outDir: 'dist', emptyOutDir: true },
+  // The dev and preview servers answer this computer only, never the local network.
+  server: { host: '127.0.0.1' },
+  preview: { host: '127.0.0.1' },
 });

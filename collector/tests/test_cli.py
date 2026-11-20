@@ -1,25 +1,12 @@
 """The command line (B11): the summary, the local journal, a run without key, a run when every
 source fails, the dry run, validation, and no key anywhere (B12, with caplog)."""
 
-import json
 import logging
 
 from collector import config
 from collector.__main__ import main
 
-from .helpers import FAKE_KEY, NOW, SOURCES, routes
-
-
-def collect(*argv: str, table: dict = SOURCES) -> int:
-    return main(list(argv), transport=routes(table), now=NOW)
-
-
-def give_key(folder) -> None:
-    (folder / ".env").write_text(f"{config.RANSOMWARE_LIVE_KEY}={FAKE_KEY}\n", encoding="utf-8")
-
-
-def written() -> dict:
-    return json.loads(config.OUTPUT_PATH.read_text(encoding="utf-8"))
+from .helpers import FAKE_KEY, SOURCES, collect, give_key, written
 
 
 def test_run_writes_the_cards_and_prints_a_summary(isolated, capsys):

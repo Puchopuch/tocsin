@@ -196,14 +196,28 @@ export function attackUrl(id) {
   return `https://attack.mitre.org/techniques/T${match[1]}/${match[2] ? `${match[2]}/` : ''}`;
 }
 
-/** Only plain web links are kept; never javascript:, data: or .onion addresses. */
+const LABEL = '[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?';
+const HOST = new RegExp(`^${LABEL}(?:\\.${LABEL})+$`);
+
+/**
+ * A link the page may show, checked again with the rules of the collector: https only, written in
+ * plain ASCII without space, control character, backslash, quote or angle bracket, to a host name
+ * without user name, password or port. Never javascript:, data:, vbscript:, file: or a link
+ * without scheme (//), in capitals, encoded or after spaces; never a .onion address, an
+ * internationalised (xn--) name or an IP address. Anything else gives null: the link is not shown.
+ * The cases of collector/tests/data/links.json are checked on both sides.
+ */
 export function safeUrl(url) {
-  if (typeof url !== 'string' || url === '') return null;
+  if (typeof url !== 'string' || url.length > 2000 || !url.startsWith('https://')) return null;
+  if (!/^[\x21-\x7e]+$/.test(url) || /[\\"<>`{}|^]/.test(url)) return null;
+  const authority = url.slice('https://'.length).split(/[/?#]/, 1)[0];
+  const host = authority.toLowerCase().replace(/\.$/, '');
+  if (!HOST.test(host)) return null; // also refuses "@" (user, password), ":" (port), "%" and "["
+  const labels = host.split('.');
+  if (labels.at(-1) === 'onion' || /^\d+$/.test(labels.at(-1)) || labels.some((label) => label.startsWith('xn--'))) return null;
   try {
     const parsed = new URL(url);
-    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return null;
-    if (parsed.hostname.endsWith('.onion')) return null;
-    return parsed.href;
+    return parsed.protocol === 'https:' && parsed.hostname.replace(/\.$/, '') === host ? parsed.href : null;
   } catch {
     return null;
   }

@@ -1,19 +1,25 @@
 """CERT-FR alerts (B4): the alerts of the last 7 days and the CVE numbers they cite, read in the
 feed and, when robots.txt allows it, in the cve.org links of each alert page (the feed shortens
-descriptions, so it may miss some)."""
+descriptions, so it may miss some).
+
+The feed is read with defusedxml and no DTD at all: no entity, no external file, so neither an
+XXE nor a "billion laughs" can go through. A broken item is skipped and counted."""
 
 from __future__ import annotations
 
 import logging
 import re
-import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from urllib.parse import urlsplit
 from urllib.robotparser import RobotFileParser
 
+from defusedxml import DefusedXmlException
+from defusedxml.ElementTree import ParseError, fromstring
+
 from .. import config
 from ..models import CertfrAlert, host_is, is_safe_url
+from ..text import BrokenText, clean
 from . import Fetcher, SourceError, window_start
 
 NAME = "CERT-FR, alertes"
@@ -29,19 +35,23 @@ def unique(values: list[str]) -> list[str]:
 
 def parse(body: bytes) -> list[CertfrAlert]:
     try:
-        root = ET.fromstring(body)
-    except ET.ParseError:
+        root = fromstring(body, forbid_dtd=True)
+    except (ParseError, DefusedXmlException, ValueError, RecursionError):
         raise SourceError("CERT-FR : flux illisible") from None
-    alerts = []
+    alerts, broken = [], 0
     for item in root.iter("item"):
-        title = " ".join((item.findtext("title") or "").split())
+        # A link is never cleaned: anything but plain ASCII makes is_safe_url refuse it.
         url = (item.findtext("link") or "").strip()
-        number = NUMBER.search(url) or NUMBER.search(item.findtext("guid") or "")
+        guid = (item.findtext("guid") or "")[: config.MAX_URL]
         try:
-            published = parsedate_to_datetime(item.findtext("pubDate") or "")
-        except (TypeError, ValueError, IndexError):
+            title = clean(item.findtext("title"), config.MAX_NAME)
+            published = parsedate_to_datetime(clean(item.findtext("pubDate"), 100))
+        except (BrokenText, TypeError, ValueError, IndexError):
+            broken += 1
             continue
+        number = NUMBER.search(url) or NUMBER.search(guid)
         if not (title and number) or not is_safe_url(url) or not host_is(url, config.CERTFR_HOST):
+            broken += 1
             continue
         if published.tzinfo is None:
             published = published.replace(tzinfo=timezone.utc)
@@ -52,6 +62,8 @@ def parse(body: bytes) -> list[CertfrAlert]:
             published=published.astimezone(timezone.utc),
             cves=unique(CVE.findall(item.findtext("description") or "")),
         ))
+    if broken:
+        log.warning("CERT-FR : %d alerte(s) illisible(s) ignorée(s)", broken)
     return alerts
 
 

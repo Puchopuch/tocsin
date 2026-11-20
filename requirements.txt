@@ -1,5 +1,6 @@
 # Collector dependencies. Exact versions, all published before 5 November 2026.
 # Add a library only when a phase needs it (feedparser, rapidfuzz, trafilatura come later).
+defusedxml==0.7.1
 httpx==0.28.1
 pydantic==2.14.2
 python-dotenv==1.2.4

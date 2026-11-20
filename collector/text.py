@@ -1,8 +1,49 @@
-"""Text helpers shared by the cards and the severity rules, in French and in English."""
+"""Text helpers shared by the sources, the cards and the severity rules, in French and in English."""
 
 import re
 import unicodedata
 from datetime import date
+
+# Unicode categories taken out of the texts of the sources: format characters (zero-width spaces,
+# bidi controls such as U+202E and U+2066 to U+2069, soft hyphen, byte order mark, tag
+# characters), private use and unassigned code points. Control characters and line or paragraph
+# separators become spaces.
+REMOVED = frozenset({"Cf", "Co", "Cn"})
+SPACES = frozenset({"Cc", "Zl", "Zp"})
+HIDDEN = REMOVED | SPACES | {"Cs"}
+
+
+class BrokenText(ValueError):
+    """A text that a sound source cannot give: not a text, a NUL byte, half of a surrogate pair,
+    or far too long. Its entry is skipped."""
+
+
+def clean(value: object, limit: int) -> str:
+    """A text read from a source, ready for a card: control, invisible and bidi characters taken
+    out, spaces collapsed, Unicode in NFC. None gives "". Raises BrokenText (see above)."""
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        raise BrokenText("pas un texte")
+    if len(value) > limit:
+        raise BrokenText(f"texte de plus de {limit} caractères")
+    if "\x00" in value:
+        raise BrokenText("octet nul")
+    if any("\ud800" <= char <= "\udfff" for char in value):
+        raise BrokenText("Unicode invalide")
+    kept = []
+    for char in value:
+        category = unicodedata.category(char)
+        if category in SPACES or char.isspace():
+            kept.append(" ")
+        elif category not in REMOVED:
+            kept.append(char)
+    return " ".join(unicodedata.normalize("NFC", "".join(kept)).split())
+
+
+def is_plain(text: str) -> bool:
+    """True when the text holds no character that clean() takes out, and is in NFC."""
+    return not any(unicodedata.category(char) in HIDDEN for char in text) and unicodedata.normalize("NFC", text) == text
 
 MONTHS = (
     "janvier", "février", "mars", "avril", "mai", "juin",

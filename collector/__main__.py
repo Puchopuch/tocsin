@@ -130,10 +130,16 @@ def run(args: argparse.Namespace, *, transport: httpx.BaseTransport | None, now:
     for card_id, why in rejected:
         log.warning("rejetée : %s : %s", card_id, why)
     sources_ok = sum(report.state == "ok" for report in reports)
-    outcome, data = output.publish(config.OUTPUT_PATH, valid, now, sources_ok=sources_ok, dry_run=args.dry_run)
+    sources_failed = sum(report.state == "échec" for report in reports)
+    try:
+        outcome, data = output.publish(
+            config.OUTPUT_PATH, valid, now, sources_ok=sources_ok, sources_failed=sources_failed, dry_run=args.dry_run
+        )
+    except OSError as error:  # disk full, file locked...: the previous file stays whole
+        outcome, data, sources_failed = f"gardé tel quel : écriture impossible ({type(error).__name__})", None, 1
     log.info("%s : %s", shown(config.OUTPUT_PATH), outcome)
     print_summary(now, reports, data, rejected, held, outcome, dry_run=args.dry_run)
-    return 0 if sources_ok else 1
+    return 0 if sources_ok and not sources_failed else 1
 
 
 def check_sources(*, transport: httpx.BaseTransport | None, now: datetime | None) -> int:
