@@ -8,12 +8,16 @@ import MethodDrawer from './components/MethodDrawer.jsx';
 import { APP_NAME } from './config.js';
 import { useAttacks, useNow, useStored } from './hooks.js';
 import { digest } from './lib/digest.js';
-import { matchesQuery, plural, todayLabel, WEEK } from './lib/format.js';
+import { matchesQuery, plural, todayLabel, windowStart } from './lib/format.js';
 import { LEVELS } from './lib/severity.js';
 
 const ALL = 'toutes';
 const rank = (attack) => LEVELS.indexOf(attack.severity);
-const byDate = (a, b) => b.first_seen - a.first_seen;
+const dayOf = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+// The newest day first; on the same day, a flaw already exploited before one that is not, at the
+// headline as everywhere else; then the latest time.
+const byDate = (a, b) =>
+  dayOf(b.first_seen) - dayOf(a.first_seen) || Number(b.exploited) - Number(a.exploited) || b.first_seen - a.first_seen;
 const bySeverityThenDate = (a, b) => rank(a) - rank(b) || byDate(a, b);
 
 /**
@@ -44,8 +48,7 @@ function arrange(cards, severity) {
 }
 
 export default function App() {
-  const [calm, setCalm] = useState(false);
-  const { status, attacks, generatedAt, isDemo, simulate } = useAttacks({ calm });
+  const { status, attacks, generatedAt } = useAttacks();
   const now = useNow();
   const searchRef = useRef(null);
 
@@ -58,7 +61,8 @@ export default function App() {
   const [checklists, setChecklists] = useStored('tocsin.checklists', {});
 
   // The last seven days, newest first.
-  const recent = useMemo(() => attacks.filter((a) => now - a.first_seen <= WEEK).sort(byDate), [attacks, now]);
+  const recent = useMemo(() => attacks.filter((a) => a.first_seen >= windowStart(now)).sort(byDate), [attacks, now]);
+  const hasCards = recent.length > 0;
 
   // Everything but the tab: search and "Grand public uniquement".
   const scoped = useMemo(
@@ -136,18 +140,6 @@ export default function App() {
   const openMethod = useCallback(() => setMethodOpen(true), []);
   const closeMethod = useCallback(() => setMethodOpen(false), []);
 
-  // Demo only: the new attack becomes the headline, so the filters are cleared to show it.
-  function handleSimulate() {
-    const alert = simulate();
-    resetFilters();
-    setAnnouncement(`Nouvelle attaque critique : ${alert.title}`);
-  }
-
-  function handleCalm() {
-    setCalm((value) => !value);
-    setAnnouncement(calm ? 'Journée habituelle' : 'Journée calme simulée : uniquement des attaques mineures');
-  }
-
   return (
     <MotionConfig reducedMotion="user">
       <div className="flex min-h-dvh flex-col" inert={panelOpen}>
@@ -155,32 +147,28 @@ export default function App() {
           Aller aux attaques
         </a>
 
-        <Header
-          status={status}
-          generatedAt={generatedAt}
-          now={now}
-          searchRef={searchRef}
-          query={query}
-          onQueryChange={setQuery}
-          demo={isDemo ? { calm, onCalm: handleCalm, onSimulate: handleSimulate } : null}
-        />
+        <Header status={status} generatedAt={generatedAt} now={now} searchRef={searchRef} query={query} onQueryChange={setQuery} />
 
         <main className="flex-1">
           <h1 className="sr-only">{APP_NAME}, les cyberattaques du jour</h1>
           <div className="page digest">
             <p className="digest__date">{todayLabel(now)}</p>
-            {status === 'ready' && <p className="digest__text">{summary}</p>}
+            {hasCards && <p className="digest__text">{summary}</p>}
           </div>
 
-          <Filters severity={severity} onSeverityChange={setSeverity} counts={counts} publicOnly={publicOnly} onPublicOnlyChange={setPublicOnly} />
+          {hasCards && (
+            <Filters severity={severity} onSeverityChange={setSeverity} counts={counts} publicOnly={publicOnly} onPublicOnlyChange={setPublicOnly} />
+          )}
 
           <section id="attaques" tabIndex={-1} aria-label="Attaques" className="page results outline-none">
             {status === 'loading' && <p className="state">Chargement des attaques…</p>}
             {status === 'error' && (
               <p className="state">Impossible de charger les attaques pour le moment. Réessayez dans quelques minutes.</p>
             )}
-            {status === 'ready' && recent.length === 0 && <p className="state">Aucune attaque ces sept derniers jours.</p>}
-            {status === 'ready' && recent.length > 0 && shown === 0 && (
+            {(status === 'empty' || status === 'ready') && !hasCards && (
+              <p className="state">Aucune attaque recensée pour le moment.</p>
+            )}
+            {hasCards && shown === 0 && (
               <div className="state">
                 <p>Aucune attaque ne correspond à ces filtres.</p>
                 <button type="button" className="link mt-2" onClick={resetFilters}>
@@ -222,10 +210,7 @@ export default function App() {
         </main>
 
         <footer className="page site-footer">
-          <p>
-            Chaque fiche cite ses sources. Les fiches sont rédigées par une IA et peuvent contenir des erreurs.
-            {isDemo && ' Données fictives.'}
-          </p>
+          <p>Chaque fiche cite ses sources. Les fiches sont construites à partir de ces sources par des règles fixes, sans IA.</p>
           <button type="button" className="link" onClick={openMethod}>
             Méthode et sources
           </button>
@@ -243,7 +228,7 @@ export default function App() {
         onToggleStep={toggleStep}
         onClose={closeSheet}
       />
-      <MethodDrawer open={methodOpen} onClose={closeMethod} isDemo={isDemo} />
+      <MethodDrawer open={methodOpen} onClose={closeMethod} />
     </MotionConfig>
   );
 }

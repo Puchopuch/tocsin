@@ -202,15 +202,6 @@
     white-space: nowrap;
   }
 
-  .demo-line {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px 20px;
-    padding-bottom: 12px;
-    color: var(--color-muted);
-    font-size: 14px;
-  }
-
   /* Date and the sentence counted on the cards. */
   .digest {
     padding-top: 32px;

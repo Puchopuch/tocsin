@@ -1,23 +1,36 @@
-// Data and state hooks. The site is static: in demo mode it shows the fictional alerts of
-// data/demo.js; otherwise it reads data/cards.json, rebuilt every hour by the pipeline, and
-// nothing else. The real site never falls back on demo data.
+// Data and state hooks. The site reads data/cards.json, written by the collector at each
+// collection (collector/ at the root of the repository), and nothing else. There is no other
+// mode: without that file, the page says that no attack has been recorded yet.
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { buildDemoFeed, buildSimulatedAlert } from './data/demo.js';
+import { useCallback, useEffect, useState } from 'react';
 import { applyClaimRule, LEVELS, STATUS } from './lib/severity.js';
 import { safeUrl } from './lib/format.js';
 import { typo } from './lib/typo.js';
 
 const env = import.meta.env ?? {};
 
-export const IS_DEMO = env.VITE_DEMO === 'true';
 const FEED_URL = `${env.BASE_URL ?? '/'}data/cards.json`;
 const AUDIENCES = ['grand_public', 'entreprises', 'les_deux'];
+/** The file is read again every 5 minutes, and whenever the tab comes back into view. */
+const REFRESH = 5 * 60_000;
+const DAY_ONLY = /^(\d{4})-(\d{2})-(\d{2})$/;
 
-const toDate = (value) => {
+/**
+ * A Date, or null. A day alone ("2026-11-18"), given by a source without a time, is that day in
+ * local time, marked `dayOnly` so that no hour is ever shown for it.
+ */
+function toDate(value) {
+  const day = typeof value === 'string' ? DAY_ONLY.exec(value) : null;
+  if (day) {
+    const date = new Date(Number(day[1]), Number(day[2]) - 1, Number(day[3]));
+    if (Number.isNaN(date.getTime())) return null;
+    date.dayOnly = true;
+    return date;
+  }
   const date = new Date(value);
   return value && !Number.isNaN(date.getTime()) ? date : null;
-};
+}
+
 const list = (value) => (Array.isArray(value) ? value : []);
 const text = (value) => (typeof value === 'string' ? typo(value.trim()) : '');
 const firstSentence = (paragraph) => /^.*?[.!?](?=\s|$)/.exec(paragraph ?? '')?.[0] ?? paragraph ?? '';
@@ -49,6 +62,8 @@ export function normalizeAttack(raw) {
     title: text(raw.title),
     lede: text(raw.lede) || firstSentence(summary[0]),
     first_seen: firstSeen,
+    // True only when a source confirms that the flaw is already exploited.
+    exploited: raw.exploited === true,
     sector: text(raw.sector),
     audience: AUDIENCES.includes(raw.audience) ? raw.audience : 'les_deux',
     // Only "confirme" counts as confirmed: anything else is treated as a rumour.
@@ -93,50 +108,55 @@ export function normalizeFeed(json) {
   return { generatedAt, attacks: json.attacks.map(normalizeAttack).filter(Boolean) };
 }
 
-const demoState = (calm) => ({ status: 'ready', ...normalizeFeed(buildDemoFeed(Date.now(), { calm })) });
+const EMPTY = { status: 'empty', generatedAt: null, attacks: [] };
+
+/** The feed, or EMPTY when no collection has written it yet. Throws when it cannot be read. */
+async function loadFeed(signal) {
+  const response = await fetch(FEED_URL, { cache: 'no-cache', signal });
+  const type = response.headers.get('content-type') ?? '';
+  // No file yet: a 404, or the HTML page that some servers send in its place.
+  if (response.status === 404 || (response.ok && type.includes('text/html'))) return EMPTY;
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return { status: 'ready', ...normalizeFeed(await response.json()) };
+}
+
+const sameFeed = (a, b) => a.status === b.status && a.generatedAt?.getTime() === b.generatedAt?.getTime();
 
 /**
- * The alerts to show. `status` is "loading", "ready" or "error". In demo mode, `calm` swaps in a
- * calm day, and `simulate()` puts a new critical alert first and returns it.
+ * The attacks to show. `status` is "loading", "ready" (the file was read; it may hold no attack),
+ * "empty" (no file: no collection yet) or "error" (the file cannot be read). After the first
+ * load, a refresh that fails keeps what is shown.
  */
-export function useAttacks({ calm = false } = {}) {
-  const [state, setState] = useState(() =>
-    IS_DEMO ? demoState(calm) : { status: 'loading', generatedAt: null, attacks: [] },
-  );
-  const simulated = useRef(0);
-  const [shownCalm, setShownCalm] = useState(calm);
-
-  // Demo only: switching between the usual day and a calm day, in the same render, so that the
-  // page never shows the new label with the old cards.
-  if (IS_DEMO && shownCalm !== calm) {
-    setShownCalm(calm);
-    setState(demoState(calm));
-  }
+export function useAttacks() {
+  const [state, setState] = useState({ status: 'loading', generatedAt: null, attacks: [] });
 
   useEffect(() => {
-    if (IS_DEMO) return undefined;
-    const controller = new AbortController();
-    fetch(FEED_URL, { cache: 'no-cache', signal: controller.signal })
-      .then((response) => {
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return response.json();
-      })
-      .then((json) => setState({ status: 'ready', ...normalizeFeed(json) }))
-      .catch((error) => {
-        if (error.name !== 'AbortError') setState({ status: 'error', generatedAt: null, attacks: [] });
-      });
-    return () => controller.abort();
+    let controller = null;
+    async function refresh() {
+      controller?.abort();
+      controller = new AbortController();
+      try {
+        const next = await loadFeed(controller.signal);
+        setState((current) => (sameFeed(current, next) ? current : next));
+      } catch (error) {
+        if (error.name === 'AbortError') return;
+        setState((current) => (current.status === 'loading' ? { status: 'error', generatedAt: null, attacks: [] } : current));
+      }
+    }
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') refresh();
+    };
+    refresh();
+    const timer = setInterval(refresh, REFRESH);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+      controller?.abort();
+    };
   }, []);
 
-  const simulate = useCallback(() => {
-    const now = Date.now();
-    const alert = normalizeAttack(buildSimulatedAlert(simulated.current, now));
-    simulated.current += 1;
-    setState((current) => ({ ...current, generatedAt: new Date(now), attacks: [alert, ...current.attacks] }));
-    return alert;
-  }, []);
-
-  return { ...state, isDemo: IS_DEMO, simulate: IS_DEMO ? simulate : null };
+  return state;
 }
 
 /** Current time in milliseconds, refreshed every minute and when the tab becomes visible. */
@@ -160,8 +180,8 @@ export function useNow(interval = 60_000) {
 }
 
 /**
- * A value kept in this browser only (localStorage): the profile, doubts reported, checklist
- * ticks. Works without storage too (private mode, blocked site data).
+ * A value kept in this browser only (localStorage): the ticks of the "Que faire" steps. Works
+ * without storage too (private mode, blocked site data).
  */
 export function useStored(key, fallback) {
   const [value, setValue] = useState(() => {

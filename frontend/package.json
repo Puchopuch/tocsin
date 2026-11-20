@@ -1,8 +1,8 @@
 {
   "name": "veille-cyber-frontend",
   "private": true,
-  "version": "0.2.0",
-  "description": "CyberPulse: a personal radar of cyberattacks for the general public and small businesses (static frontend).",
+  "version": "0.3.0",
+  "description": "Tocsin: the cyberattacks of the day for the general public and small businesses, read from the cards written by the collector (static frontend).",
   "type": "module",
   "engines": {
     "node": ">=20.19"
@@ -10,7 +10,6 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "build:demo": "vite build --mode demo",
     "preview": "vite preview",
     "check": "node scripts/check.mjs"
   },
@@ -25,7 +24,6 @@
     "@vitejs/plugin-react": "6.2.1",
     "playwright": "1.64.1",
     "tailwindcss": "4.3.4",
-    "vite": "8.3.5",
-    "vite-plugin-singlefile": "2.3.4"
+    "vite": "8.3.5"
   }
 }

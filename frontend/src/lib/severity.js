@@ -51,13 +51,13 @@ export const GRID = [
   {
     level: 'grave',
     criteria: typo(
-      "Plus de 100 000 personnes, des données sensibles (santé, banque, identité), une paralysie de plus d'une semaine, un service public paralysé, ou une faille déjà exploitée dans un logiciel répandu.",
+      "Plus de 100 000 personnes, des données sensibles (santé, banque, identité), une paralysie de plus d'une semaine, un service public paralysé, une faille déjà exploitée dans un logiciel répandu, ou une alerte du CERT-FR.",
     ),
   },
   {
     level: 'significative',
     criteria: typo(
-      "De 1 000 à 100 000 personnes, une organisation paralysée moins d'une semaine, ou une grande entreprise touchée sans fuite importante.",
+      "De 1 000 à 100 000 personnes, une organisation paralysée moins d'une semaine, une grande entreprise touchée sans fuite importante, ou une faille déjà exploitée dans un logiciel peu répandu.",
     ),
   },
   {

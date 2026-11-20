@@ -5,23 +5,23 @@ import { APP_NAME } from '../config.js';
 import { CLAIM_RULE, GRID, GRID_INTRO, SEVERITY, STATUS } from '../lib/severity.js';
 import { typo } from '../lib/typo.js';
 
+// The sources the collector reads today, and nothing else.
 const ORIGINS = [
-  ['Autorités', 'CERT-FR, CISA, Cybermalveillance.gouv.fr.'],
-  ['Presse spécialisée', 'BleepingComputer, The Record, LeMagIT, ZATAZ.'],
+  ['Autorités', 'CISA, l’agence américaine de cybersécurité (failles déjà exploitées), et CERT-FR (alertes).'],
   ['Revendications de pirates', typo('ransomware.live, toujours affichées comme « Revendiqué, non confirmé ».')],
-  ['Réseaux sociaux', typo('Mastodon, Bluesky et X, affichés comme « Rumeur, non confirmée » tant que rien ne les confirme.')],
 ];
 
 const LIMITS = [
-  'Les fiches sont rédigées par une IA à partir des sources citées : elles peuvent contenir des erreurs.',
+  'Les fiches sont construites automatiquement à partir des sources citées : si une source se trompe, la fiche aussi.',
   "L'origine d'une attaque n'est donnée que si une source fiable la donne.",
   'Une information absente est marquée « Non communiqué » plutôt que devinée.',
+  "Aucune donnée personnelle : une revendication dont la victime pourrait être une personne n'est pas publiée.",
   'Aucun lien vers les sites des rançonneurs ni vers des données volées.',
-  "Les données sont mises à jour toutes les heures : ce n'est pas du direct.",
+  "Les données sont mises à jour à chaque collecte, dont l'heure est affichée en haut de la page : ce n'est pas du direct.",
 ].map(typo);
 
 /** "Méthode et sources": where the information comes from and how levels are set. */
-export default function MethodDrawer({ open, onClose, isDemo }) {
+export default function MethodDrawer({ open, onClose }) {
   const titleId = useId();
 
   return (
@@ -30,7 +30,6 @@ export default function MethodDrawer({ open, onClose, isDemo }) {
         <h2 id={titleId} className="drawer-title">
           Comment {APP_NAME} présente les attaques
         </h2>
-        {isDemo && <p className="mt-3">{typo("Données fictives : le vrai flux n'est pas encore branché.")}</p>}
 
         <DrawerSection title="La gravité">
           <p>{GRID_INTRO}</p>

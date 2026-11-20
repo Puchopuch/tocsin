@@ -1,6 +1,6 @@
 import { useId } from 'react';
 import { Meta, Square } from './Severity.jsx';
-import { cardDate, fullDate, NOT_GIVEN, origin, sourcesLine, targets } from '../lib/format.js';
+import { cardDate, fullDate, machineDate, NOT_GIVEN, origin, sourcesLine, targets } from '../lib/format.js';
 
 /** Status of the whole card, shown only when it is not confirmed. */
 export const cardStatus = (attack) =>
@@ -66,7 +66,7 @@ export default function AttackCard({ attack, now, une = false, onOpen }) {
     <Meta
       level={attack.severity}
       date={cardDate(attack.first_seen, now)}
-      dateTime={attack.first_seen.toISOString()}
+      dateTime={machineDate(attack.first_seen)}
       title={fullDate(attack.first_seen)}
       status={cardStatus(attack)}
     />
@@ -112,7 +112,7 @@ export function BriefList({ attacks, now, onOpen }) {
       {attacks.map((attack) => (
         <li key={attack.id} className="brief__row">
           <Square level={attack.severity} />
-          <time className="brief__date" dateTime={attack.first_seen.toISOString()} title={fullDate(attack.first_seen)}>
+          <time className="brief__date" dateTime={machineDate(attack.first_seen)} title={fullDate(attack.first_seen)}>
             {cardDate(attack.first_seen, now)}
           </time>
           <span className="brief__name">{attack.title}</span>

@@ -1,27 +1,72 @@
 // Automated browser checks of the frontend, run with `npm run check`.
 //
-// It starts the dev server (demo data), then builds the real site into a temporary folder and
-// serves it with a test feed (some cards miss information), drives a browser with Playwright,
-// prints one line per check and saves screenshots in captures/ (ignored by git).
+// The site has one mode: it shows the cards of data/cards.json, written by the collector. The
+// check builds it into a temporary folder with the configuration of `npm run build`, verifies that
+// nothing fictional reached the build, then serves it and drives a browser with Playwright. The
+// test cards (scripts/fixtures.mjs) reach the page only by intercepting its request for
+// data/cards.json: no test file is ever written into the site. Each test page runs at a fixed
+// moment, Friday 20 November 2026 at 15:00 in Paris. One line per check; screenshots in
+// captures/ (ignored by git), including the real cards when public/data/cards.json exists.
 //
 // Browser: Playwright's own Chromium (`npx playwright install chromium`, once), or a Chrome or
 // Edge already installed: CHECK_BROWSER=chrome npm run check (or msedge).
 
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { mkdir, readdir, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
-import { build, createServer, preview } from 'vite';
+import { build, preview } from 'vite';
 import { APP_NAME } from '../src/config.js';
-import { buildDemoFeed } from '../src/data/demo.js';
+import { buildAlert, buildFeed, INVENTED_NAMES } from './fixtures.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const captures = path.join(root, 'captures');
-const realOut = path.join(os.tmpdir(), 'tocsin-check-dist');
+const out = path.join(os.tmpdir(), 'tocsin-check-dist');
+const realFile = path.join(root, 'public', 'data', 'cards.json');
 const WIDTHS = [360, 390, 768, 1024, 1440];
 
-// The only colours allowed by the brief, as the browser reports them.
+const NOW = Date.parse('2026-11-20T14:00:00Z');
+const HOUR = 3_600_000;
+const DAY = 24 * HOUR;
+
+// Test feeds, all dated from NOW.
+const usual = buildFeed(NOW);
+const calm = buildFeed(NOW, { calm: true });
+const alertDay = { ...usual, attacks: [buildAlert(0, NOW), ...usual.attacks] };
+const todayOnly = { ...usual, attacks: usual.attacks.filter((a) => NOW - Date.parse(a.first_seen) < 6 * HOUR) };
+const lastWeek = {
+  ...usual,
+  attacks: usual.attacks.map((a) => ({ ...a, first_seen: new Date(Date.parse(a.first_seen) - 3 * DAY).toISOString() })),
+};
+const emptyFeed = { generated_at: new Date(NOW - 10 * 60_000).toISOString(), attacks: [] };
+const vendalo = usual.attacks.find((a) => a.id === 'test-vendalo');
+const dayOnlyCard = (id, day) => ({
+  ...structuredClone(vendalo),
+  id,
+  first_seen: day,
+  timeline: [
+    { date: day, label: 'Ajout à une liste officielle' },
+    { date: '2026-12-04', label: 'Date limite de correction' },
+  ],
+});
+const dayOnly = { generated_at: usual.generated_at, attacks: [dayOnlyCard('test-jour', '2026-11-20'), dayOnlyCard('test-veille', '2026-11-19')] };
+// Same level and same day: the card of a flaw already exploited comes first, wherever it stands.
+const amperys = usual.attacks.find((a) => a.id === 'test-amperys');
+const tieCard = (id, title, base, severity, day, exploited) => ({ ...structuredClone(base), id, title, severity, first_seen: day, exploited });
+const tie = {
+  generated_at: usual.generated_at,
+  attacks: [
+    tieCard('test-alerte', 'Alerte sans exploitation connue', amperys, 'grave', '2026-11-20', false),
+    tieCard('test-exploitee', 'Faille déjà exploitée', amperys, 'grave', '2026-11-20', true),
+    tieCard('test-hier', 'Faille exploitée hier', amperys, 'grave', '2026-11-19', true),
+    tieCard('test-sig-alerte', 'Significative sans exploitation', vendalo, 'significative', '2026-11-20', false),
+    tieCard('test-sig-exploitee', 'Significative déjà exploitée', vendalo, 'significative', '2026-11-20', true),
+  ],
+};
+
+// The only colours allowed by the design brief, as the browser reports them.
 const COLOURS = new Set([
   'rgb(245, 245, 245)', // page
   'rgb(255, 255, 255)', // cards
@@ -38,26 +83,89 @@ const COLOURS = new Set([
   'rgba(0, 0, 0, 0)', // transparent
 ]);
 
+// Words that must never be seen on the site: it shows real cards only.
+const FICTION = /\bd[ée]mo\b|\bsimul(?:ation|ations|er|ée|ées)\b|\bfictif|\bfictive|données fictives/i;
+
 const results = [];
 function report(label, ok, detail = '') {
   results.push(ok);
   console.log(`${ok ? 'OK  ' : 'FAIL'}  ${label}${detail ? `  (${detail})` : ''}`);
 }
 
+const clean = (text) => (text ?? '').replace(/\s+/g, ' ').trim();
+const CARDS = '#attaques article, .brief__row';
+
+async function filesIn(dir) {
+  const entries = await readdir(dir, { recursive: true, withFileTypes: true });
+  return entries.filter((entry) => entry.isFile()).map((entry) => path.join(entry.parentPath ?? entry.path, entry.name));
+}
+
+/** Waits, from Node, until the predicate holds in the page (works with a fake clock too). */
+async function until(page, predicate, arg, timeout = 8000) {
+  const end = Date.now() + timeout;
+  while (Date.now() < end) {
+    if (await page.evaluate(predicate, arg)) return true;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  return false;
+}
+
+// ---------------------------------------------------------------------------------------------
+// The code and the build
+
+await rm(captures, { recursive: true, force: true });
+await mkdir(captures, { recursive: true });
+
+{
+  const files = (await filesIn(path.join(root, 'src'))).filter((file) => /\.(js|jsx)$/.test(file));
+  const written = [];
+  const invented = [];
+  for (const file of files) {
+    const source = await readFile(file, 'utf8');
+    const name = path.relative(root, file);
+    if (/(Depuis hier|Aujourd’hui|Ces sept derniers jours)\s*:\s*\d|\d+ attaques? (critiques?|graves?|significatives?|mineures?)/.test(source)) written.push(name);
+    if (INVENTED_NAMES.some((invention) => source.includes(invention)) || /fixtures/.test(source)) invented.push(name);
+  }
+  report('La phrase du jour n’est écrite nulle part dans le code', written.length === 0, written.join(', '));
+  report('Aucune donnée de test dans src/ : elles vivent dans scripts/fixtures.mjs', invented.length === 0, invented.join(', '));
+}
+
+await build({ root, logLevel: 'error', build: { outDir: out, emptyOutDir: true } });
+
+{
+  const found = [];
+  for (const file of await filesIn(out)) {
+    if (/\.(woff2?|png|jpe?g|ico|svg)$/.test(file)) continue;
+    const text = await readFile(file, 'utf8');
+    const name = path.relative(out, file);
+    for (const invention of INVENTED_NAMES) if (text.includes(invention)) found.push(`${name} : ${invention}`);
+    // data/cards.json holds real cards, whose words are not ours: only invented names count there.
+    const word = name.startsWith('data') ? null : FICTION.exec(text);
+    if (word) found.push(`${name} : « ${word[0]} »`);
+  }
+  report('Le site construit ne contient aucune donnée de test, ni « démo », « simulation » ou « fictif »', found.length === 0, found.slice(0, 6).join(' | '));
+}
+
+const previewServer = await preview({ root, logLevel: 'error', build: { outDir: out }, preview: { port: 4199, strictPort: false } });
+const base = previewServer.resolvedUrls.local[0];
 const browser = await chromium.launch({ channel: process.env.CHECK_BROWSER || undefined });
 const offsite = [];
 
-async function openPage(base, { width = 1440, height = 900, reduce = false, waitFor = '#attaques article, .brief__row', context: shared } = {}) {
-  const context =
-    shared ??
-    (await browser.newContext({
-      viewport: { width, height },
-      reducedMotion: reduce ? 'reduce' : 'no-preference',
-      locale: 'fr-FR',
-      timezoneId: 'Europe/Paris',
-    }));
+/**
+ * A page of the built site. `feed` stands for data/cards.json: an object, an HTTP status, raw
+ * text, a function returning one of these at each request, or null for the real file. `timers`:
+ * "fixed" (the date is NOW), "fake" (NOW, and time moves only when the test says so) or "real".
+ */
+async function openPage({ feed = usual, width = 1440, height = 900, reduce = false, waitFor = CARDS, timers = 'fixed' } = {}) {
+  const context = await browser.newContext({
+    viewport: { width, height },
+    reducedMotion: reduce ? 'reduce' : 'no-preference',
+    locale: 'fr-FR',
+    timezoneId: 'Europe/Paris',
+  });
   const page = await context.newPage();
   const errors = [];
+  const requests = { feed: 0 };
   page.on('request', (request) => {
     const url = new URL(request.url());
     if (!['data:', 'blob:'].includes(url.protocol) && url.origin !== new URL(base).origin) offsite.push(url.href);
@@ -66,15 +174,27 @@ async function openPage(base, { width = 1440, height = 900, reduce = false, wait
     if (message.type() === 'error') errors.push(message.text());
   });
   page.on('pageerror', (error) => errors.push(String(error)));
+  await page.route('**/data/cards.json', (route) => {
+    requests.feed += 1;
+    const current = typeof feed === 'function' ? feed() : feed;
+    if (current === null) return route.continue();
+    if (typeof current === 'number') return route.fulfill({ status: current, contentType: 'text/plain', body: 'Not found' });
+    if (typeof current === 'string') {
+      return route.fulfill({ status: 200, contentType: current.startsWith('<') ? 'text/html' : 'application/json', body: current });
+    }
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(current) });
+  });
+  if (timers === 'fixed') await page.clock.setFixedTime(NOW);
+  if (timers === 'fake') await page.clock.install({ time: NOW });
   await page.goto(base);
   if (waitFor) await page.waitForSelector(waitFor);
   await page.evaluate(() => document.fonts.ready);
-  return { context, page, errors };
+  return { context, page, errors, requests };
 }
 
-const clean = (text) => (text ?? '').replace(/\s+/g, ' ').trim();
 const tabTexts = (page) => page.$$eval('.tab', (tabs) => tabs.map((tab) => tab.textContent.replace(/\s+/g, ' ').trim()));
 const digestText = (page) => page.locator('.digest__text').textContent().then(clean);
+const updatedText = (page) => page.locator('.site-header__updated').textContent().then(clean);
 const layout = (page) =>
   page.evaluate(() => ({
     une: document.querySelector('.une .une__title')?.textContent ?? null,
@@ -84,7 +204,7 @@ const layout = (page) =>
     briefHeading: document.querySelector('#en-bref') !== null,
   }));
 
-/** Every rule of the brief that can be read on the page itself. */
+/** Every rule of the design brief that can be read on the page itself. */
 async function styleAudit(page) {
   return page.evaluate((allowed) => {
     const problems = new Set();
@@ -116,27 +236,16 @@ async function styleAudit(page) {
   }, [...COLOURS]);
 }
 
-// ---------------------------------------------------------------------------------------------
-// Demo mode, on the dev server
-
-const server = await createServer({ root, logLevel: 'error', server: { port: 5199, strictPort: false } });
-await server.listen();
-const demoBase = server.resolvedUrls.local[0];
-
 try {
-  await rm(captures, { recursive: true, force: true });
-  await mkdir(captures, { recursive: true });
-
-  // Screenshots asked by the brief, demo mode.
+  // Screenshots: the usual day, a calm day and the detail panel, with test cards.
   {
-    const shoot = async (name, { width, height, act, full = true }) => {
-      const { context, page } = await openPage(demoBase, { width, height });
+    const shoot = async (name, { feed = usual, width, height, act, full = true }) => {
+      const { context, page } = await openPage({ feed, width, height });
       if (act) await act(page);
       await page.waitForTimeout(400);
       await page.screenshot({ path: path.join(captures, name), fullPage: full });
       await context.close();
     };
-    const calm = (page) => page.click('text=Simuler une journée calme');
     const sheet = async (page) => {
       await page.locator('.une .link').click();
       await page.waitForSelector('[role="dialog"]');
@@ -146,29 +255,17 @@ try {
       [1440, 900],
       [390, 844],
     ]) {
-      await shoot(`demo-${width}.png`, { width, height });
-      await shoot(`demo-calme-${width}.png`, { width, height, act: calm });
-      await shoot(`demo-tiroir-${width}.png`, { width, height, act: sheet, full: false });
+      await shoot(`test-${width}.png`, { width, height });
+      await shoot(`test-calme-${width}.png`, { feed: calm, width, height });
+      await shoot(`test-tiroir-${width}.png`, { width, height, act: sheet, full: false });
     }
-  }
-
-  // The sentence of the day is never written in the code: no file of src/ contains one.
-  {
-    const { readdir, readFile } = await import('node:fs/promises');
-    const files = (await readdir(path.join(root, 'src'), { recursive: true })).filter((file) => /\.(js|jsx)$/.test(file));
-    const written = [];
-    for (const file of files) {
-      const source = await readFile(path.join(root, 'src', file), 'utf8');
-      if (/Depuis hier\s*:\s*\d|\d+ attaques? (critiques?|graves?|significatives?|mineures?)/.test(source)) written.push(file);
-    }
-    report('La phrase du jour n’est écrite nulle part dans le code', written.length === 0, written.join(', '));
   }
 
   // Widths: no sideways scroll, one-line header, one column on phones with the headline first.
   {
     const problems = [];
     for (const width of WIDTHS) {
-      const { context, page } = await openPage(demoBase, { width, height: 900 });
+      const { context, page } = await openPage({ width, height: 900 });
       const m = await page.evaluate(() => {
         const rect = (el) => el.getBoundingClientRect();
         const middle = (el) => rect(el).top + rect(el).height / 2;
@@ -192,12 +289,14 @@ try {
     report('Largeurs 360 à 1440 px : pas de défilement, en-tête d’une ligne, mobile en une colonne, la une d’abord', problems.length === 0, problems.join('; '));
   }
 
-  // Layout and sentence of the usual day.
+  // The usual day: layout, sentence, time of the collection, style.
   {
-    const { context, page, errors } = await openPage(demoBase);
+    const { context, page, errors } = await openPage();
     const tabs = await tabTexts(page);
     report('Onglets : Toutes 8, Critique 1, Grave 2, Significative 3, Mineure 2', JSON.stringify(tabs) === JSON.stringify(['Toutes 8', 'Critique 1', 'Grave 2', 'Significative 3', 'Mineure 2']), tabs.join(', '));
     report('Phrase calculée sur les cartes', (await digestText(page)) === 'Depuis hier : 1 attaque critique et 2 graves. 2 concernent le grand public.', await digestText(page));
+    const stamp = await page.locator('.site-header__updated time').getAttribute('datetime');
+    report('« Mis à jour à … » : l’heure de la collecte inscrite dans le fichier', (await updatedText(page)) === 'Mis à jour à 14 h 48' && stamp === usual.generated_at, `${await updatedText(page)} ; ${stamp}`);
     const l = await layout(page);
     report('À la une : la critique ; graves sur 2 colonnes, significatives sur 3, mineures « En bref »', l.une?.includes('TelecomX') && l.two === 2 && l.three === 3 && l.brief === 2 && l.briefHeading, JSON.stringify(l));
     const grid = await page.evaluate(() => {
@@ -225,16 +324,17 @@ try {
 
     const audit = await styleAudit(page);
     report('Seules les couleurs du brief ; ni ombre, ni dégradé, ni majuscules ; arrondi 6 px sur les cartes, 0 ailleurs ; Inria Sans seule', audit.problems.length === 0, audit.problems.slice(0, 6).join(' | '));
-    report('Tailles 14, 16, 22 et 40 px ; graisses 300, 400 et 700', audit.sizes.every((s) => ['14px', '16px', '22px', '40px'].includes(s)) && audit.weights.every((w) => ['300', '400', '700'].includes(w)), `${audit.sizes.join(' ')} · ${audit.weights.join(' ')}`.replace(' · ', ' / '));
+    report('Tailles 14, 16, 22 et 40 px ; graisses 300, 400 et 700', audit.sizes.every((s) => ['14px', '16px', '22px', '40px'].includes(s)) && audit.weights.every((w) => ['300', '400', '700'].includes(w)), `${audit.sizes.join(' ')} / ${audit.weights.join(' ')}`);
 
     const text = await page.evaluate(() => document.body.innerText);
     report('Pas de « · », de flèche, de badge « Confirmé » ni d’« En direct »', !/[·→]/.test(text) && !/\bConfirmé\b/.test(text) && !/en direct/i.test(text));
     report('Statut seulement quand il n’est pas confirmé', /Revendiqué, non confirmé/.test(text) && /Présumé, non confirmé/.test(text) && /Rumeur vue sur X, non confirmée/.test(text));
     report('Information absente : « Non communiqué », la ligne reste', (text.match(/Non communiqué/g) ?? []).length >= 3);
     report(`Nom tiré de APP_NAME (« ${APP_NAME} ») dans l’en-tête et le titre de page`, clean(await page.locator('.site-header__name').textContent()) === APP_NAME && (await page.title()).startsWith(APP_NAME));
-    report('Mode démo : ligne « Données fictives » et deux petits liens', (await page.locator('.demo-line').textContent()).includes('Données fictives') && (await page.locator('.demo-line button').count()) === 2);
+    report('Plus de ligne de démo ni de lien de simulation', (await page.locator('.demo-line').count()) === 0 && !/Simuler|Données fictives/.test(text));
+    report('Pied de page : les fiches sont construites sans IA, sans le prétendre', /par des règles fixes, sans IA/.test(text) && !/rédigées par une IA/.test(text));
     report('Aucune animation au chargement', (await page.evaluate(() => document.getAnimations().length)) === 0);
-    report('Aucune erreur dans la console (démo)', errors.length === 0, errors.join(' | '));
+    report('Aucune erreur dans la console', errors.length === 0, errors.join(' | '));
 
     await page.click('.tab:has-text("Critique")');
     const critique = await layout(page);
@@ -247,7 +347,8 @@ try {
     const publicTabs = await tabTexts(page);
     const publicDigest = await digestText(page);
     await page.uncheck('.public-only input');
-    report('« Grand public uniquement » : les attaques d’entreprises disparaissent, la phrase suit', publicTabs[0] === 'Toutes 6' && publicDigest === 'Depuis hier : 1 attaque critique et 1 grave. 2 concernent le grand public.', `${publicTabs[0]} ; ${publicDigest}`);
+    // Without the two business cards of yesterday, every card counted is from today.
+    report('« Grand public uniquement » : les attaques d’entreprises disparaissent, la phrase et sa période suivent', publicTabs[0] === 'Toutes 6' && publicDigest === 'Aujourd’hui : 1 attaque critique et 1 grave. 2 concernent le grand public.', `${publicTabs[0]} ; ${publicDigest}`);
 
     await page.keyboard.press('/');
     const slash = await page.evaluate(() => document.activeElement?.id === 'search');
@@ -256,33 +357,149 @@ try {
     await page.keyboard.press('Escape');
     report('Recherche instantanée, « / » pour y aller, Échap pour effacer', slash && searched.une?.includes('TelecomX') && searched.two + searched.three + searched.brief === 0 && (await page.inputValue('#search')) === '');
 
-    await page.click('text=Simuler une journée calme');
-    const calm = await layout(page);
-    const calmDigest = await digestText(page);
-    report('Journée calme : pas de une, seulement « En bref »', calm.une === null && calm.two + calm.three === 0 && calm.brief === 3, JSON.stringify(calm));
-    report('Journée calme : phrase juste', calmDigest === 'Depuis hier : aucune attaque critique ni grave, 3 mineures. 3 concernent le grand public.', calmDigest);
-    await page.click('text=Revenir à la journée habituelle');
-
-    const usualDigest = await digestText(page);
-    await page.click('text=Simuler une alerte');
-    const simulated = await layout(page);
-    const simulatedTabs = await tabTexts(page);
-    const simulatedDigest = await digestText(page);
-    report('« Simuler une alerte » : la nouvelle attaque critique passe à la une', simulated.une?.includes('Ferlino') && simulated.two === 3 && simulatedTabs[0] === 'Toutes 9' && simulatedTabs[1] === 'Critique 2', `${simulated.une} ; ${simulatedTabs.join(', ')}`);
+    await page.click('text=Méthode et sources');
+    await page.waitForSelector('[role="dialog"]');
+    const method = await page.locator('[role="dialog"]').innerText();
+    await page.keyboard.press('Escape');
     report(
-      'La phrase du jour suit les cartes : journée calme, puis alerte simulée',
-      calmDigest !== usualDigest &&
-        simulatedDigest !== usualDigest &&
-        simulatedDigest === 'Depuis hier : 2 attaques critiques et 2 graves. 3 concernent le grand public.',
-      simulatedDigest,
+      '« Méthode et sources » : les vraies sources seulement, et les deux critères de la phase 1 dans la grille',
+      ['CISA', 'CERT-FR', 'ransomware.live', 'ou une alerte du CERT-FR', 'logiciel peu répandu'].every((part) => method.includes(part)) &&
+        !/Mastodon|Bluesky|Cybermalveillance|rédigées par une IA|toutes les heures/.test(method) &&
+        !FICTION.test(method),
     );
-    report('Aucune animation d’entrée pour la nouvelle carte', (await page.evaluate(() => document.getAnimations().length)) === 0);
     await context.close();
+  }
+
+  // The sentence of the day follows the cards, and its period matches their dates.
+  {
+    const sentence = async (feed) => {
+      const { context, page } = await openPage({ feed });
+      const text = await digestText(page);
+      const l = await layout(page);
+      const tabs = await tabTexts(page);
+      await context.close();
+      return { text, l, tabs };
+    };
+    const quiet = await sentence(calm);
+    report('Journée calme : pas de une, seulement « En bref »', quiet.l.une === null && quiet.l.two + quiet.l.three === 0 && quiet.l.brief === 3, JSON.stringify(quiet.l));
+    report('Journée calme : phrase juste', quiet.text === 'Depuis hier : aucune attaque critique ni grave, 3 mineures. 3 concernent le grand public.', quiet.text);
+
+    const alert = await sentence(alertDay);
+    report('Une nouvelle attaque critique passe à la une', alert.l.une?.includes('Ferlino') && alert.l.two === 3 && alert.tabs[0] === 'Toutes 9' && alert.tabs[1] === 'Critique 2', `${alert.l.une} ; ${alert.tabs.join(', ')}`);
+    report(
+      'La phrase du jour suit les cartes : journée calme, puis alerte',
+      quiet.text !== alert.text && alert.text === 'Depuis hier : 2 attaques critiques et 2 graves. 3 concernent le grand public.',
+      alert.text,
+    );
+
+    const today = await sentence(todayOnly);
+    const week = await sentence(lastWeek);
+    report(
+      'La période écrite correspond aux dates des cartes : « Aujourd’hui », « Depuis hier », « Ces sept derniers jours »',
+      today.text === 'Aujourd’hui : 1 attaque critique et 1 grave. 2 concernent le grand public.' &&
+        week.text === 'Ces sept derniers jours : 1 attaque critique et 2 graves. 2 concernent le grand public.',
+      `${today.text} | ${week.text}`,
+    );
+  }
+
+  // Same level and same day: an exploited flaw first, at the headline as in the columns.
+  {
+    const { context, page } = await openPage({ feed: tie });
+    const order = await page.evaluate(() => ({
+      une: document.querySelector('.une .une__title')?.textContent,
+      two: [...document.querySelectorAll('.grid-cards--2 .card__title')].map((node) => node.textContent),
+      three: [...document.querySelectorAll('.grid-cards--3 .card__title')].map((node) => node.textContent),
+    }));
+    await context.close();
+    report(
+      'À gravité et date égales, la faille exploitée passe d’abord, à la une comme ailleurs',
+      order.une === 'Faille déjà exploitée' &&
+        JSON.stringify(order.two) === JSON.stringify(['Alerte sans exploitation connue', 'Faille exploitée hier']) &&
+        JSON.stringify(order.three) === JSON.stringify(['Significative déjà exploitée', 'Significative sans exploitation']),
+      JSON.stringify(order),
+    );
+  }
+
+  // A source that gives a date without a time: no hour is ever invented.
+  {
+    const { context, page } = await openPage({ feed: dayOnly });
+    const times = await page.$$eval('#attaques time', (nodes) => nodes.map((node) => ({ text: node.textContent.trim(), at: node.getAttribute('datetime') })));
+    await page.locator('#lire-test-jour').click();
+    await page.waitForSelector('[role="dialog"]');
+    const sheet = await page.locator('[role="dialog"]').innerText();
+    await context.close();
+    const text = times.map((t) => t.text).join(' ');
+    report(
+      'Date sans heure : « aujourd’hui », « hier », jamais une heure inventée',
+      text.includes('aujourd’hui') && text.includes('hier') && !/\d\s*h\s*\d{2}/.test(text) && times.every((t) => /^\d{4}-\d{2}-\d{2}$/.test(t.at)),
+      JSON.stringify(times),
+    );
+    report('Fiche d’une date sans heure : « Détectée le 20 novembre 2026 », chronologie sans heure', /Détectée le 20 novembre 2026(?! à)/.test(sheet) && /20 nov\./.test(sheet) && !/\d\s*h\s*\d{2}/.test(sheet.replace(/Mis à jour.*$/m, '')));
+  }
+
+  // No card: the page says so, and invents nothing.
+  {
+    const quietPage = async (feed, name) => {
+      const { context, page, errors } = await openPage({ feed, waitFor: '.state' });
+      const result = {
+        state: clean(await page.locator('.state').first().textContent()),
+        updated: await updatedText(page),
+        tabs: await page.locator('.tab').count(),
+        digest: await page.locator('.digest__text').count(),
+        text: await page.evaluate(() => document.body.innerText),
+        errors: errors.filter((error) => !/404|Failed to load resource/.test(error)),
+      };
+      if (name) {
+        await page.screenshot({ path: path.join(captures, `${name}-1440.png`), fullPage: true });
+        await page.setViewportSize({ width: 390, height: 844 });
+        await page.screenshot({ path: path.join(captures, `${name}-390.png`), fullPage: true });
+      }
+      await page.click('text=Méthode et sources');
+      await page.waitForSelector('[role="dialog"]');
+      result.text += await page.locator('[role="dialog"]').innerText();
+      await context.close();
+      return result;
+    };
+    const absent = await quietPage(404, 'vide');
+    report(
+      'Sans data/cards.json : « Aucune attaque recensée pour le moment », sans heure, sans onglets ni phrase',
+      absent.state === 'Aucune attaque recensée pour le moment.' && absent.updated === '' && absent.tabs === 0 && absent.digest === 0 && absent.errors.length === 0,
+      JSON.stringify({ ...absent, text: undefined }),
+    );
+    report('Aucun mot « démo », « simulation » ou « fictif » sur le site, panneau « Méthode et sources » compris', !FICTION.test(absent.text), FICTION.exec(absent.text)?.[0] ?? '');
+    const htmlInstead = await quietPage('<!doctype html><title>Page</title>');
+    report('Une page HTML à la place du fichier compte comme l’absence de fichier', htmlInstead.state === 'Aucune attaque recensée pour le moment.' && htmlInstead.updated === '');
+    const none = await quietPage(emptyFeed);
+    report('Fichier sans attaque : même message, avec l’heure réelle de la collecte', none.state === 'Aucune attaque recensée pour le moment.' && none.updated === 'Mis à jour à 14 h 50' && none.tabs === 0, `${none.state} ; ${none.updated}`);
+    const broken = await quietPage('{pas du json');
+    report('Fichier illisible : un message d’erreur, pas « aucune attaque »', broken.state.startsWith('Impossible de charger les attaques') && broken.updated === 'Données indisponibles', broken.state);
+  }
+
+  // The file is read again every five minutes, and when the tab comes back.
+  {
+    let current = usual;
+    const { context, page, requests } = await openPage({ feed: () => current, timers: 'fake', waitFor: null });
+    await until(page, () => document.querySelectorAll('.tab').length > 0);
+    const before = { updated: await updatedText(page), tabs: await tabTexts(page) };
+    current = { generated_at: new Date(NOW + 3 * 60_000).toISOString(), attacks: [buildAlert(0, NOW + 2 * 60_000), ...usual.attacks] };
+    await page.clock.runFor(5 * 60_000 + 1_000);
+    const refreshed = await until(page, () => document.querySelector('.tab')?.textContent.includes('9'));
+    const after = { updated: await updatedText(page), reads: requests.feed };
+    await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+    const end = Date.now() + 5000;
+    while (Date.now() < end && requests.feed <= after.reads) await new Promise((resolve) => setTimeout(resolve, 100));
+    const again = requests.feed > after.reads;
+    await context.close();
+    report(
+      'Le fichier est relu toutes les 5 minutes et au retour sur l’onglet : nouvelle carte, nouvelle heure',
+      before.tabs[0] === 'Toutes 8' && before.updated === 'Mis à jour à 14 h 48' && refreshed && after.updated === 'Mis à jour à 15 h 03' && again,
+      `${before.updated} → ${after.updated}, ${requests.feed} lectures`,
+    );
   }
 
   // Detail panel: the only movement, three ways to close, focus back, checklist kept.
   {
-    const { context, page } = await openPage(demoBase);
+    const { context, page } = await openPage();
     const opener = page.locator('.une .link');
     const openerId = await opener.getAttribute('id');
     const failures = [];
@@ -314,56 +531,37 @@ try {
 
   // Keyboard only.
   {
-    const { context, page } = await openPage(demoBase);
+    const { context, page } = await openPage();
     const seen = [];
     for (let i = 0; i < 60; i += 1) {
       await page.keyboard.press('Tab');
       const info = await page.evaluate(() => {
         const el = document.activeElement;
         const s = getComputedStyle(el);
-        const kind = el.id === 'search' ? 'search' : el.classList.contains('tab') ? 'tab' : el.type === 'checkbox' ? 'checkbox' : el.id?.startsWith('lire-') ? 'read' : el.closest('.demo-line') ? 'demo' : el.tagName.toLowerCase();
+        const kind = el.id === 'search' ? 'search' : el.classList.contains('tab') ? 'tab' : el.type === 'checkbox' ? 'checkbox' : el.id?.startsWith('lire-') ? 'read' : el.tagName.toLowerCase();
         return { key: [...document.querySelectorAll('*')].indexOf(el), kind, ring: s.outlineStyle === 'solid' && s.outlineWidth === '2px' };
       });
       if (info.kind === 'body' || seen.some((s) => s.key === info.key)) break;
       seen.push(info);
     }
     const count = (kind) => seen.filter((s) => s.kind === kind).length;
-    report('Clavier : recherche, liens de démo, onglets, case, chaque « Lire »', count('search') === 1 && count('demo') === 2 && count('tab') === 5 && count('checkbox') === 1 && count('read') === 8, seen.map((s) => s.kind).join(' > '));
+    report('Clavier : recherche, onglets, case, chaque « Lire »', count('search') === 1 && count('tab') === 5 && count('checkbox') === 1 && count('read') === 8, seen.map((s) => s.kind).join(' > '));
     report('Focus visible (contour noir de 2 px) partout', seen.every((s) => s.ring));
     await context.close();
   }
 
   // Reduced motion: even the panel appears without moving.
   {
-    const { context, page } = await openPage(demoBase, { reduce: true });
+    const { context, page } = await openPage({ reduce: true });
     await page.locator('.une .link').click();
     await page.waitForSelector('[role="dialog"]');
     report('Avec prefers-reduced-motion, le tiroir apparaît sans bouger', (await page.evaluate(() => document.getAnimations().length)) === 0);
     await context.close();
   }
-} finally {
-  await server.close();
-}
 
-// ---------------------------------------------------------------------------------------------
-// Real site: production build, test feed with missing information, Content-Security-Policy
-
-await build({ root, logLevel: 'error', build: { outDir: realOut, emptyOutDir: true } });
-const previewServer = await preview({ root, logLevel: 'error', build: { outDir: realOut }, preview: { port: 4199, strictPort: false } });
-const realBase = previewServer.resolvedUrls.local[0];
-
-try {
+  // A feed with missing information and dangerous links, as a real one may have.
   {
-    const { context, page, errors } = await openPage(realBase, { waitFor: null });
-    await page.waitForSelector('text=Impossible de charger les attaques pour le moment.');
-    const demo = await page.evaluate(() => ({ line: document.querySelector('.demo-line') !== null, word: /fictive/i.test(document.body.innerText) }));
-    report('Site réel sans data/cards.json : message, ni « Données fictives » ni liens de démo', !demo.line && !demo.word);
-    report('Aucune autre erreur dans la console (site réel, sans données)', errors.filter((e) => !/404|Failed to load resource/.test(e)).length === 0);
-    await context.close();
-  }
-  {
-    // Test feed: the demo cards, with pieces of information removed as a real feed may have.
-    const feed = buildDemoFeed(Date.now());
+    const feed = structuredClone(usual);
     const [first, second, third, fourth, fifth] = feed.attacks;
     delete first.attacker;
     first.sources = [
@@ -378,40 +576,58 @@ try {
     third.attacker = { name: 'Groupe test', country: 'Pays test', status: 'presume', source: null };
     delete fourth.loot;
     delete fifth.reliability; // a confirmed card whose feed forgot the field
-    await mkdir(path.join(realOut, 'data'), { recursive: true });
-    await writeFile(path.join(realOut, 'data', 'cards.json'), JSON.stringify(feed));
 
-    const { context, page, errors } = await openPage(realBase);
-    await page.screenshot({ path: path.join(captures, 'reel-test-1440.png'), fullPage: true });
+    const { context, page, errors } = await openPage({ feed });
+    await page.screenshot({ path: path.join(captures, 'test-incomplet-1440.png'), fullPage: true });
     const text = await page.evaluate(() => document.body.innerText);
     const csp = await page.evaluate(() => document.querySelector('meta[http-equiv="Content-Security-Policy"]')?.content ?? '');
-    const articles = await page.locator('#attaques article, .brief__row').count();
-    await page.locator('#lire-demo-telecomx').click();
+    const articles = await page.locator(CARDS).count();
+    await page.locator('#lire-test-telecomx').click();
     await page.waitForSelector('[role="dialog"]');
     const links = await page.$$eval('.sources a', (anchors) => anchors.map((a) => ({ href: a.href, rel: a.rel, target: a.target })));
     const mitre = await page.$$eval('.tech a', (anchors) => anchors.map((a) => a.href));
     await context.close();
 
-    const phone = await openPage(realBase, { width: 390, height: 844 });
-    await phone.page.screenshot({ path: path.join(captures, 'reel-test-390.png'), fullPage: true });
+    const phone = await openPage({ feed, width: 390, height: 844 });
+    await phone.page.screenshot({ path: path.join(captures, 'test-incomplet-390.png'), fullPage: true });
     await phone.context.close();
 
-    report('Site réel avec un flux de test : toutes les attaques s’affichent', articles === 8, `${articles}`);
+    report('Flux de test incomplet : toutes les attaques s’affichent', articles === 8, `${articles}`);
     report('Cartes incomplètes : « Non communiqué » à la place de chaque information manquante', (text.match(/Non communiqué/g) ?? []).length >= 5);
     report('Pays donné par une source : écrit en toutes lettres', text.includes('Groupe test (Pays test)'));
     report('Fiabilité absente du flux : traitée comme une rumeur, jamais comme confirmée', /Rumeur, non confirmée/.test(text));
     report('Liens des sources : seul le lien web reste, ouvert à part', links.length === 1 && links[0].href === 'https://example.org/article' && links[0].rel === 'noopener noreferrer' && links[0].target === '_blank', JSON.stringify(links));
     report('Techniques MITRE ATT&CK liées à attack.mitre.org', mitre.length > 0 && mitre.every((href) => href.startsWith('https://attack.mitre.org/techniques/')));
     report('Content-Security-Policy présente', csp.includes("connect-src 'self'"), csp);
-    report('Aucune erreur dans la console, CSP comprise (site réel)', errors.length === 0, errors.join(' | '));
+    report('Aucune erreur dans la console, CSP comprise', errors.length === 0, errors.join(' | '));
+  }
+
+  // The real cards, when the collector has written them.
+  if (existsSync(realFile)) {
+    const real = JSON.parse(await readFile(realFile, 'utf8'));
+    const { context, page, errors } = await openPage({ feed: null, timers: 'real', waitFor: `${CARDS}, .state` });
+    await page.screenshot({ path: path.join(captures, 'reel-1440.png'), fullPage: true });
+    const shown = await page.locator(CARDS).count();
+    const total = (await tabTexts(page))[0] ?? '';
+    const stamp = (await page.locator('.site-header__updated time').getAttribute('datetime').catch(() => null)) ?? '';
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.screenshot({ path: path.join(captures, 'reel-390.png'), fullPage: true });
+    await context.close();
+    report(
+      `Vraies cartes de public/data/cards.json : ${shown} affichées, heure de la collecte, aucune erreur`,
+      (shown === 0 || total === `Toutes ${shown}`) && Date.parse(stamp) === Date.parse(real.generated_at) && errors.length === 0,
+      `${total} ; collecte ${real.generated_at}`,
+    );
+  } else {
+    console.log('(public/data/cards.json absent : pas de capture des vraies cartes)');
   }
 } finally {
+  await browser.close();
   await previewServer.close();
-  await rm(realOut, { recursive: true, force: true });
+  await rm(out, { recursive: true, force: true });
 }
 
 report('Aucune requête vers un autre domaine', offsite.length === 0, [...new Set(offsite)].join(' '));
-await browser.close();
 
 const failed = results.filter((ok) => !ok).length;
 console.log(`\n${results.length - failed}/${results.length} vérifications réussies. Captures : ${captures}`);

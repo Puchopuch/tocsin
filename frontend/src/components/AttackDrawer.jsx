@@ -2,7 +2,7 @@ import { useId, useRef } from 'react';
 import Drawer, { DrawerSection } from './Drawer.jsx';
 import { cardStatus, Facts } from './AttackCard.jsx';
 import { Meta } from './Severity.jsx';
-import { attackUrl, cardDate, fullDate, NOT_GIVEN, orderSources, timelineDate } from '../lib/format.js';
+import { attackUrl, cardDate, fullDate, machineDate, NOT_GIVEN, orderSources, timelineDate } from '../lib/format.js';
 
 /** "Lire la fiche": everything known about one attack, with its sources. */
 export default function AttackDrawer({ attack, now, done, onToggleStep, onClose }) {
@@ -22,7 +22,7 @@ export default function AttackDrawer({ attack, now, done, onToggleStep, onClose 
           <Meta
             level={current.severity}
             date={cardDate(current.first_seen, now)}
-            dateTime={current.first_seen.toISOString()}
+            dateTime={machineDate(current.first_seen)}
             title={fullDate(current.first_seen)}
             status={cardStatus(current)}
           />
@@ -47,7 +47,7 @@ function Sheet({ attack, now, titleId, done, onToggleStep }) {
       </h2>
       <p className="mt-3">{attack.lede || NOT_GIVEN}</p>
       <p className="mt-2 text-[14px] text-muted">
-        Détectée le <time dateTime={attack.first_seen.toISOString()}>{fullDate(attack.first_seen)}</time>
+        Détectée le <time dateTime={machineDate(attack.first_seen)}>{fullDate(attack.first_seen)}</time>
       </p>
 
       <div className="mt-6">
@@ -97,7 +97,7 @@ function Sheet({ attack, now, titleId, done, onToggleStep }) {
           <ol className="timeline">
             {timeline.map((event, index) => (
               <li key={index}>
-                <time dateTime={event.date.toISOString()} title={fullDate(event.date)}>
+                <time dateTime={machineDate(event.date)} title={fullDate(event.date)}>
                   {timelineDate(event.date, now)}
                 </time>
                 <span>{event.label}</span>

@@ -1,13 +1,12 @@
 node_modules/
 dist/
-dist-demo/
 
 # Local files: secrets, editor and agent settings
 .env.local
 .env.*.local
 .claude/
 
-# Real feed: written by the pipeline at deploy time, never committed here
+# Real cards, written by the collector at each collection: they name real organisations
 public/data/
 
 # Screenshots of npm run check

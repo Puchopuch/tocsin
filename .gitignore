@@ -1,0 +1,17 @@
+# Secrets: keys go in .env, filled in by hand, never committed.
+.env
+.env.*
+!.env.example
+
+# Briefs: these PDFs hold local paths, never committed.
+docs/*.pdf
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Collector: state and local journal. They hold real names: never committed.
+collector/state.db*
+collector/logs/

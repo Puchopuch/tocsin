@@ -3,11 +3,18 @@
 
 import { STATUS } from './severity.js';
 
-const DAY = 24 * 60 * 60 * 1000;
 const NBSP = ' ';
 
-/** Alerts older than this are not shown. */
-export const WEEK = 7 * DAY;
+/**
+ * Start of the window of cards shown: midnight, seven days ago. Whole days, as the collector
+ * counts them, so that a source giving only a date counts the same way as one giving a time.
+ */
+export function windowStart(now) {
+  const start = new Date(now);
+  start.setHours(0, 0, 0, 0);
+  start.setDate(start.getDate() - 7);
+  return start;
+}
 
 /** What a card shows when a piece of information is missing: the line stays. */
 export const NOT_GIVEN = 'Non communiqué';
@@ -35,9 +42,19 @@ export function clock(date, { pad = false } = {}) {
 const dayMonth = (date, now) =>
   (date.getFullYear() === new Date(now).getFullYear() ? DAY_MONTH : DAY_MONTH_YEAR).format(date);
 
-/** Short date of a card: "07 h 42" today, "hier", or "18 nov.". */
+// A date marked `dayOnly` (see hooks.js) came from a source that gives no time: no hour is ever
+// shown for it, so that nothing is invented.
+
+/** For the datetime attribute of <time>: the day alone when the source gave no time. */
+export function machineDate(date) {
+  if (!date.dayOnly) return date.toISOString();
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+/** Short date of a card: "07 h 42" today ("aujourd’hui" without a time), "hier", or "18 nov.". */
 export function cardDate(date, now) {
-  if (sameDay(date, new Date(now))) return clock(date, { pad: true });
+  if (sameDay(date, new Date(now))) return date.dayOnly ? 'aujourd’hui' : clock(date, { pad: true });
   if (isYesterday(date, now)) return 'hier';
   return dayMonth(date, now);
 }
@@ -49,11 +66,11 @@ export function updatedAt(date, now) {
   return `le ${dayMonth(date, now)} à ${clock(date)}`;
 }
 
-/** "20 novembre 2026 à 7 h 42". */
-export const fullDate = (date) => `${LONG_DAY.format(date)} à ${clock(date)}`;
+/** "20 novembre 2026 à 7 h 42", or "20 novembre 2026" without a time. */
+export const fullDate = (date) => (date.dayOnly ? LONG_DAY.format(date) : `${LONG_DAY.format(date)} à ${clock(date)}`);
 
-/** "16 nov. à 14 h 10", for the timeline. */
-export const timelineDate = (date, now) => `${dayMonth(date, now)} à ${clock(date)}`;
+/** "16 nov. à 14 h 10", or "16 nov." without a time, for the timeline. */
+export const timelineDate = (date, now) => (date.dayOnly ? dayMonth(date, now) : `${dayMonth(date, now)} à ${clock(date)}`);
 
 /** "Vendredi 20 novembre". */
 export const todayLabel = (now) => capitalize(WEEKDAY.format(now));
@@ -139,7 +156,7 @@ export const targets = (victim) => ({
 export const orderSources = (sources = []) =>
   [...sources].sort((a, b) => Number(b.official) - Number(a.official));
 
-/** "Sources : CERT-FR, LeMagIT", or "Source : TelecomX". */
+/** "Sources : CISA, NVD, CERT-FR", or "Source : ransomware.live". */
 export function sourcesLine(sources = []) {
   if (sources.length === 0) return `Sources${NBSP}: ${NOT_GIVEN.toLowerCase()}`;
   const names = [...new Set(orderSources(sources).map((source) => source.name))];

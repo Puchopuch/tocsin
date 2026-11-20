@@ -1,10 +1,12 @@
-// Demo data, in the format of data/cards.json: eight attacks (one critical, two serious, three
-// significant, one of them a rumour, two minor), a calm day, and the critical alerts added by
-// "Simuler une alerte". Some cards miss a piece of information on purpose, as real ones will.
+// Test feeds for `npm run check` only, in the format of data/cards.json: a usual day of eight
+// attacks (one critical, two serious, three significant, one of them a rumour, two minor), a calm
+// day, and critical alerts that a test adds on top. Some cards miss a piece of information on
+// purpose, as real ones will.
 //
-// Everything here is fictional and must stay so: every organisation, group and app is invented,
-// no real group or country is accused, and real organisations only appear as sources marked
-// "(exemple fictif)". Dates are computed from the moment the page loads.
+// The site never imports this file: the check builds the site and verifies that none of these
+// names reached the build. Everything here is fictional and must stay so: every organisation,
+// group and app is invented, no real group or country is accused, and real organisations only
+// appear as sources marked "(exemple fictif)". Dates are computed from the `now` given.
 
 const HOUR = 3_600_000;
 
@@ -29,7 +31,7 @@ function usualDay(now) {
   const { ago, dayAt } = clock(now);
   return [
     {
-      id: 'demo-telecomx',
+      id: 'test-telecomx',
       severity: 'critique',
       severity_reason: 'Des données bancaires de 2,4 millions de personnes.',
       title: "Fuite massive de données chez l'opérateur TelecomX",
@@ -73,7 +75,7 @@ function usualDay(now) {
       ],
     },
     {
-      id: 'demo-sms-livraison',
+      id: 'test-sms-livraison',
       severity: 'grave',
       severity_reason: 'Des données bancaires volées à grande échelle.',
       title: 'Faux SMS de livraison : des cartes bancaires vidées',
@@ -109,7 +111,7 @@ function usualDay(now) {
       ],
     },
     {
-      id: 'demo-amperys',
+      id: 'test-amperys',
       severity: 'grave',
       severity_reason: 'Une faille déjà exploitée dans un logiciel répandu.',
       title: 'Une faille exploitée dans un logiciel de réseaux électriques',
@@ -152,7 +154,7 @@ function usualDay(now) {
       ],
     },
     {
-      id: 'demo-ondalis',
+      id: 'test-ondalis',
       severity: 'significative',
       severity_reason: "Rumeur non vérifiée : « Significative » au plus, tant qu'aucune source fiable ne la confirme.",
       title: 'Une fuite de données chez Ondalis ? Une rumeur circule',
@@ -185,7 +187,7 @@ function usualDay(now) {
       sources: [{ name: 'X', title: fictional("Message d'un compte anonyme"), url: null, official: false }],
     },
     {
-      id: 'demo-faux-rib',
+      id: 'test-faux-rib',
       severity: 'significative',
       severity_reason: "Une centaine d'entreprises touchées, sans fuite de données.",
       title: 'De faux fournisseurs envoient de faux RIB à des PME',
@@ -224,7 +226,7 @@ function usualDay(now) {
       sources: [{ name: 'Préfecture de Rives-Ouest', title: fictional('Alerte aux entreprises'), url: null, official: true }],
     },
     {
-      id: 'demo-vendalo',
+      id: 'test-vendalo',
       severity: 'significative',
       severity_reason: 'Entre 1 000 et 100 000 personnes, sans donnée sensible.',
       title: '12 000 comptes Vendalo piratés avec des mots de passe réutilisés',
@@ -253,7 +255,7 @@ function usualDay(now) {
       sources: [{ name: 'Vendalo', title: fictional('E-mail aux clients'), url: null, official: true }],
     },
     {
-      id: 'demo-morvalene',
+      id: 'test-morvalene',
       severity: 'mineure',
       severity_reason: 'Une seule petite structure, touchée quelques heures.',
       title: 'Le site de la mairie de Morvalène défiguré trois heures',
@@ -282,7 +284,7 @@ function usualDay(now) {
       sources: [{ name: 'Mairie de Morvalène', title: fictional('Message aux habitants'), url: null, official: true }],
     },
     {
-      id: 'demo-photoluxe',
+      id: 'test-photoluxe',
       severity: 'mineure',
       severity_reason: 'Moins de 1 000 personnes touchées.',
       title: 'Une fausse appli de retouche photo vole des mots de passe sur Mac',
@@ -313,13 +315,13 @@ function usualDay(now) {
   ];
 }
 
-// "Simuler une journée calme": minor attacks only.
+// A calm day: minor attacks only.
 function calmDay(now) {
   const { ago, dayAt } = clock(now);
   const day = usualDay(now);
   return [
     {
-      id: 'calm-trameo',
+      id: 'test-trameo',
       severity: 'mineure',
       severity_reason: 'Une panne de quelques heures, sans vol de données.',
       title: "L'application des transports Trameo coupée deux heures",
@@ -347,9 +349,9 @@ function calmDay(now) {
       technical: { cves: [], software: [], techniques: [{ id: 'T1498', name: 'Network Denial of Service' }] },
       sources: [{ name: 'Trameo', title: fictional('Message aux voyageurs'), url: null, official: true }],
     },
-    day.find((attack) => attack.id === 'demo-morvalene'),
+    day.find((attack) => attack.id === 'test-morvalene'),
     {
-      id: 'calm-valtorre',
+      id: 'test-valtorre',
       severity: 'mineure',
       severity_reason: 'Moins de 1 000 personnes visées, sans intrusion.',
       title: "Un faux concours au nom de l'AS Valtorre circule",
@@ -380,10 +382,10 @@ function calmDay(now) {
   ];
 }
 
-// "Simuler une alerte": critical attacks, one by one, then again from the start.
-const SIMULATED = [
+// Critical alerts that a test adds on top of the usual day, one by one.
+const ALERTS = [
   {
-    id: 'sim-ferlino',
+    id: 'test-ferlino',
     source: 'Ferlino',
     severity_reason: "Un service vital (transport) paralysé à l'échelle d'une région.",
     title: 'Les trains régionaux Ferlino arrêtés par un rançongiciel',
@@ -407,7 +409,7 @@ const SIMULATED = [
     techniques: [{ id: 'T1486', name: 'Data Encrypted for Impact' }],
   },
   {
-    id: 'sim-valmeuse',
+    id: 'test-valmeuse',
     source: 'Eaux de Valmeuse',
     severity_reason: "Un service vital (l'eau) touché.",
     title: "Des pirates ont pris la main sur le réseau d'eau de Valmeuse",
@@ -431,7 +433,7 @@ const SIMULATED = [
     techniques: [{ id: 'T0822', name: 'External Remote Services' }],
   },
   {
-    id: 'sim-monetis',
+    id: 'test-monetis',
     source: 'Monétis',
     severity_reason: 'Un impact national : le paiement par carte bloqué dans des milliers de magasins.',
     title: 'Le paiement par carte bloqué dans 8 000 magasins',
@@ -456,12 +458,10 @@ const SIMULATED = [
   },
 ];
 
-export const SIMULATED_ALERT_COUNT = SIMULATED.length;
-
-/** The n-th simulated alert (always critical), dated now. */
-export function buildSimulatedAlert(n, now) {
+/** The n-th critical alert, dated now. */
+export function buildAlert(n, now) {
   const { ago } = clock(now);
-  const { steps, techniques, source, ...alert } = SIMULATED[n % SIMULATED.length];
+  const { steps, techniques, source, ...alert } = ALERTS[n % ALERTS.length];
   return {
     ...alert,
     id: `${alert.id}-${n + 1}`,
@@ -476,10 +476,16 @@ export function buildSimulatedAlert(n, now) {
   };
 }
 
-/** The demo feed, as the pipeline would write it: the usual day, or a calm one. */
-export function buildDemoFeed(now, { calm = false } = {}) {
+/** A test feed, as the collector would write it: the usual day, or a calm one. */
+export function buildFeed(now, { calm = false } = {}) {
   return {
     generated_at: new Date(now - 12 * 60_000).toISOString(),
     attacks: calm ? calmDay(now) : usualDay(now),
   };
 }
+
+/** Names invented for these feeds: none of them may ever appear in the built site. */
+export const INVENTED_NAMES = [
+  'TelecomX', 'Ondalis', 'Vendalo', 'PhotoLuxe', 'Trameo', 'Valtorre', 'Ferlino', 'Valmeuse',
+  'Kovalt', 'Vantor', 'Morval', 'Ampérys', 'Monétis', 'Rives-Ouest', 'test-telecomx',
+];

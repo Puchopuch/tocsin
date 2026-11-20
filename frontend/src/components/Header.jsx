@@ -2,10 +2,10 @@ import { APP_NAME } from '../config.js';
 import { fullDate, updatedAt } from '../lib/format.js';
 
 /**
- * One line: the name, the search, and when the data was last updated, in grey. In demo mode, a
- * second line says the data is fictional and offers the two simulations as small text links.
+ * One line: the name, the search, and the time of the last collection, in grey. That time comes
+ * from the file written by the collector; without the file, no time is shown.
  */
-export default function Header({ status, generatedAt, now, searchRef, query, onQueryChange, demo }) {
+export default function Header({ status, generatedAt, now, searchRef, query, onQueryChange }) {
   function onKeyDown(event) {
     if (event.key !== 'Escape') return;
     if (query) onQueryChange('');
@@ -49,18 +49,6 @@ export default function Header({ status, generatedAt, now, searchRef, query, onQ
           )}
         </p>
       </div>
-
-      {demo && (
-        <div className="page demo-line">
-          <p>Données fictives</p>
-          <button type="button" className="link" onClick={demo.onSimulate}>
-            Simuler une alerte
-          </button>
-          <button type="button" className="link" aria-pressed={demo.calm} onClick={demo.onCalm}>
-            {demo.calm ? 'Revenir à la journée habituelle' : 'Simuler une journée calme'}
-          </button>
-        </div>
-      )}
     </header>
   );
 }

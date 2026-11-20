@@ -1,12 +1,20 @@
 // The sentence under the date, of the form "<période> : <n> attaque(s) critique(s) et <n>
 // grave(s). <n> concerne(nt) le grand public." Every number in it is counted on the cards on the
-// page, nothing else: it is never written in advance.
+// page, and the period says exactly which ones: it is never written in advance.
 
 import { LEVELS, SEVERITY } from './severity.js';
 
 const NBSP = ' ';
 
 const forPublic = (attack) => attack.audience !== 'entreprises';
+
+/** Midnight, `daysBefore` days before `now`, in local time. */
+function startOfDay(now, daysBefore = 0) {
+  const day = new Date(now);
+  day.setHours(0, 0, 0, 0);
+  day.setDate(day.getDate() - daysBefore);
+  return day;
+}
 
 /** "<n> attaque(s) critique(s) et <n> grave(s)", or "<n> significative(s) et <n> mineure(s)". */
 function countPhrase(counts, levels, { noun }) {
@@ -28,15 +36,18 @@ function publicPhrase(n) {
 }
 
 /**
- * Summary of the cards shown: since yesterday (midnight) when there is anything since then,
- * otherwise over the last seven days.
+ * Summary of the cards shown (those of the last seven days). The period matches the dates of the
+ * cards counted: "Aujourd’hui" when they are all from today, "Depuis hier" when some are from
+ * yesterday, and "Ces sept derniers jours" when nothing happened since yesterday.
  */
 export function digest(cards, now) {
-  const midnight = new Date(now);
-  midnight.setHours(0, 0, 0, 0);
-  midnight.setDate(midnight.getDate() - 1);
-  const recent = cards.filter((card) => card.first_seen >= midnight);
-  const [period, pool] = recent.length > 0 ? ['Depuis hier', recent] : ['Ces sept derniers jours', cards];
+  const sinceYesterday = cards.filter((card) => card.first_seen >= startOfDay(now, 1));
+  let period = 'Ces sept derniers jours';
+  let pool = cards;
+  if (sinceYesterday.length > 0) {
+    pool = sinceYesterday;
+    period = sinceYesterday.every((card) => card.first_seen >= startOfDay(now)) ? 'Aujourd’hui' : 'Depuis hier';
+  }
 
   if (pool.length === 0) return `${period}${NBSP}: aucune attaque.`;
 
