@@ -12,6 +12,6 @@ certifi==2026.10.23
 h11==0.16.0
 httpcore==1.0.9
 idna==3.20
-pydantic-core==2.50.2
+pydantic-core==2.50.4
 typing-extensions==4.16.0
 typing-inspection==0.4.5
