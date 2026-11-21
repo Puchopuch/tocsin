@@ -65,7 +65,7 @@ def read_sources(fetcher: Fetcher, now: datetime, key: str | None):
         reports.append(Report(kev.NAME, "échec", str(error)))
     try:
         feed = certfr.fetch(fetcher)
-        alerts = certfr.with_page_cves(fetcher, certfr.recent(feed, now))
+        alerts = certfr.with_page_details(fetcher, certfr.recent(feed, now))
         reports.append(Report(certfr.NAME, "ok", f"{len(feed)} alertes lues, {len(alerts)} de moins de 7 jours"))
     except SourceError as error:
         reports.append(Report(certfr.NAME, "échec", str(error)))

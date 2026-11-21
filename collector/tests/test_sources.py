@@ -53,7 +53,7 @@ def test_certfr_refuses_a_broken_feed():
 def test_certfr_reads_the_cves_of_the_page_when_robots_txt_allows_it():
     seen = []
     with fetcher(SOURCES, seen) as client:
-        alerts = certfr.with_page_cves(client, certfr.recent(certfr.parse(sample("certfr-alertes.xml")), NOW))
+        alerts = certfr.with_page_details(client, certfr.recent(certfr.parse(sample("certfr-alertes.xml")), NOW))
     nginx = next(alert for alert in alerts if alert.number == "CERTFR-2026-ALE-017")
     assert set(nginx.cves) == {"CVE-2026-123007", "CVE-2026-123633"}
     urls = [str(request.url) for request in seen]
@@ -65,7 +65,7 @@ def test_certfr_never_reads_a_page_that_robots_txt_forbids():
     table = {**SOURCES, "https://www.cert.cyber.gouv.fr/robots.txt": (200, b"User-agent: *\nDisallow: /alerte/\n")}
     seen = []
     with fetcher(table, seen) as client:
-        alerts = certfr.with_page_cves(client, certfr.recent(certfr.parse(sample("certfr-alertes.xml")), NOW))
+        alerts = certfr.with_page_details(client, certfr.recent(certfr.parse(sample("certfr-alertes.xml")), NOW))
     assert not any("/alerte/CERTFR" in str(request.url) for request in seen)
     assert all(alert.cves for alert in alerts)  # the CVEs of the feed remain
 

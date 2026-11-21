@@ -95,6 +95,7 @@ the same in both languages.
 | `first_seen` | a day alone (`2026-11-18`) or a UTC time (`2026-11-18T07:42:00Z`) | "07 h 42", "aujourd'hui", "hier", "18 nov." |
 | `audience` | `grand_public`, `entreprises`, `les_deux` | "Grand public uniquement", daily sentence |
 | `exploited` | `true` only when a source confirms the flaw is already exploited | order of the cards |
+| `kind` | `faille` (a flaw) or `attaque` (an attack); missing: `attaque` | daily sentence: "alertes", unless every card counted is an attack |
 | `reliability` | `confirme`, or anything else for a rumour | "Rumeur, non confirmée" |
 | `reliability_source` | where a rumour was seen, e.g. `X` | "Rumeur vue sur X, non confirmée" |
 | `attacker` | `name`, `country`, `status`, `source` | Origine |
@@ -165,7 +166,9 @@ scripts/
   critique et 2 graves. 2 concernent le grand public." The period says which cards are counted:
   "Aujourd'hui" when they are all from today, "Depuis hier" when some are from yesterday, "Ces
   sept derniers jours" when nothing happened since yesterday ("Today", "Since yesterday", "Over
-  the last seven days" in English). It is never written in advance.
+  the last seven days" in English). It is never written in advance. It says "attaques" only when
+  every card counted is an attack; as soon as a flaw is counted, "alertes" ("Depuis hier : 3
+  alertes graves."), which covers both.
 - **Tabs** with their counts, underlined when active; "Grand public uniquement" on the right.
   Without any card, neither tabs nor sentence: only "Aucune attaque recensée pour le moment".
 - **Order**: the most serious first, then the newest day; on the same day and at the same level,

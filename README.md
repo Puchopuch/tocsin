@@ -82,6 +82,24 @@ Every card is made of fixed sentences filled with fields of its source (brief, p
 sentence longer than the limits of the site gives way to a generic one. What a source does not
 say stays empty, and the site shows "Non communiqué" ("Not disclosed").
 
+What a card says, without AI (`collector/flaws.py`, fixed tables in French and English):
+- **CISA, method**: the type of flaw, read in the name the CISA gives it ("Code Injection",
+  "Path Traversal"…), else in its CWE numbers (field `cwes`); unknown, the generic "Faille déjà
+  exploitée par des attaquants".
+- **CISA, impact**: the consequence the description names (code or command execution, privilege
+  escalation, unauthorized access, data leak, denial of service…), "à distance" only when the
+  text says "remote"; else "Non communiqué". Who can exploit the flaw ("un attaquant à distance,
+  sans compte") is read in the sentence that names the consequence.
+- **CISA, origin**: "Utilisée par des rançongiciels, selon la CISA" when the catalogue says
+  `knownRansomwareCampaignUse: Known`; else unknown.
+- **CERT-FR, targets and impact**: the lists "Systèmes affectés" and "Risques" of the alert page,
+  products without their versions, risks through a table of the CERT-FR wording.
+- **Summary**: one short sentence of its own ("Injection de code dans REDCap : un attaquant sans
+  compte peut exécuter du code."), then the date. The CISA and the CERT-FR are introduced once, in
+  "Méthode et sources", not on every card.
+- **Kind**: `kind` is `faille` for a flaw, `attaque` for an attack; the daily sentence of the site
+  says "alertes", not "attaques", unless every card counted is an attack.
+
 ### In French and in English
 
 The collector writes each text of a card in both languages, `{ "fr": "…", "en": "…" }`, without

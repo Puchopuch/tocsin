@@ -92,6 +92,8 @@ export function normalizeAttack(raw, lang = 'fr') {
       first_seen: firstSeen,
       // True only when a source confirms that the flaw is already exploited.
       exploited: raw.exploited === true,
+      // A flaw (an alert about software) or an attack; an older file without the field: an attack.
+      kind: raw.kind === 'faille' ? 'faille' : 'attaque',
       sector: text(raw.sector),
       audience: AUDIENCES.includes(raw.audience) ? raw.audience : 'les_deux',
       // Only "confirme" counts as confirmed: anything else is treated as a rumour.

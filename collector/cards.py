@@ -12,7 +12,7 @@ import re
 from collections.abc import Callable
 from datetime import date, datetime, timezone
 
-from . import config, severity
+from . import config, flaws, severity
 from .models import CertfrAlert, Claim, KevEntry
 from .text import article, de, english_date, fold, french_date, mentions, words
 
@@ -110,6 +110,23 @@ def unknown_attacker() -> dict:
     return {"name": None, "country": None, "status": "inconnu", "source": None}
 
 
+def listed(names: list[str], and_: str) -> str:
+    """"a", "a et b", "a, b et c"; beyond three names, the first three "et d'autres"."""
+    if len(names) > 3:
+        return f"{', '.join(names[:3])} {and_} {'d’autres' if and_ == 'et' else 'others'}".replace("’", "'")
+    return names[0] if len(names) == 1 else f"{', '.join(names[:-1])} {and_} {names[-1]}"
+
+
+def first_up(value: str) -> str:
+    return value[:1].upper() + value[1:]
+
+
+def first_down(value: str) -> str:
+    """Lower case for the first letter, unless the first word is an acronym (CSRF, XSS...)."""
+    first = value.split(" ", 1)[0]
+    return value if first.isupper() and len(first) > 1 else value[:1].lower() + value[1:]
+
+
 # CISA (KEV)
 
 
@@ -148,15 +165,25 @@ def kev_card(entry: KevEntry) -> dict:
         ("Installez la dernière mise à jour de sécurité sans attendre.",
          "Install the latest security update without delay."),
     ], config.MAX_LINE)
-    flaw_fr = f"cette faille {de(full)}" if full else f"cette faille de produits {vendor}"
-    flaw_en = f"this {full} flaw" if full else f"this flaw in {vendor} products"
+    # What the flaw is and what it allows, from the words of the CISA (collector/flaws.py).
+    kind = flaws.flaw_type(entry.name, entry.cwes)
+    result = flaws.consequence(entry.description)
+    where_fr = named or f"des produits {vendor}"
+    where_en = named or f"{vendor} products"
+    opening_fr = f"{kind[0] if kind else 'Faille'} dans {where_fr}"
+    opening_en = f"{kind[1] if kind else 'Flaw'} in {where_en}"
+    if result:
+        opening_fr += f" : {result.who[0]} peut {result.verb[0]}."
+        opening_en += f": {result.who[1]} can {result.verb[1]}."
+    else:
+        opening_fr += "."
+        opening_en += "."
     summary = text(
-        f"La CISA, l'agence américaine de cybersécurité, a ajouté {flaw_fr} "
-        f"à sa liste des failles exploitées le {french_date(entry.date_added)}.",
-        f"CISA, the US cybersecurity agency, added {flaw_en} "
-        f"to its list of exploited flaws on {english_date(entry.date_added)}.",
+        f"{opening_fr} La CISA l'a ajoutée à sa liste des failles exploitées le {french_date(entry.date_added)}.",
+        f"{opening_en} CISA added it to its list of exploited flaws on {english_date(entry.date_added)}.",
     )
-    if fold(entry.ransomware) == "known":
+    ransomware = fold(entry.ransomware) == "known"
+    if ransomware:
         summary["fr"] += " Elle sert déjà dans des attaques par rançongiciel, selon la CISA."
         summary["en"] += " According to CISA, it is already used in ransomware attacks."
     timeline = [{
@@ -184,10 +211,17 @@ def kev_card(entry: KevEntry) -> dict:
         "reliability_source": None,
         # The CISA lists only flaws already exploited: this source confirms it.
         "exploited": True,
-        "attacker": unknown_attacker(),
+        "kind": "faille",
+        # Who uses the flaw is unknown, except that the CISA says when ransomware groups do.
+        "attacker": {
+            "name": text("Utilisée par des rançongiciels, selon la CISA", "Used by ransomware, according to CISA"),
+            "country": None,
+            "status": "confirme",
+            "source": "CISA",
+        } if ransomware else unknown_attacker(),
         "victim": {"label": victim, "status": "confirme"},
-        "method": text("Faille déjà exploitée par des attaquants", "Flaw already exploited by attackers"),
-        "loot": text("Accès possible aux systèmes non mis à jour", "Possible access to systems not updated"),
+        "method": text(*kind) if kind else text("Faille déjà exploitée par des attaquants", "Flaw already exploited by attackers"),
+        "loot": text(*result.label) if result else None,
         "am_i_affected": affected,
         "action": action,
         "summary": [summary],
@@ -278,20 +312,42 @@ def certfr_card(alert: CertfrAlert) -> dict | None:
     level, reason = severity.CERTFR_ALERT
     published = moment(alert.published)
     day = day_of(alert.published)
+    # Targets and impact come from the lists "Systèmes affectés" and "Risques" of the alert page.
+    products = flaws.product_names(alert.systems)
+    risks = flaws.known_risks(alert.risks)
+    shared = {product.split()[0] for product in products}
+    victim = fitting([
+        (f"Utilisateurs {de(products[0])}", f"{products[0]} users") if len(products) == 1 else None,
+        (f"Utilisateurs {de(products[0])} et {products[1]}", f"{products[0]} and {products[1]} users")
+        if len(products) == 2 else None,
+        (f"Utilisateurs de produits {products[0].split()[0]}", f"Users of {products[0].split()[0]} products")
+        if len(products) > 1 and len(shared) == 1 else None,
+        ("Utilisateurs des produits cités", "Users of the products named"),
+    ], config.MAX_SHORT)
+    if risks:
+        what_fr = listed([first_down(fr) for fr, _ in risks], "et")
+        what_en = listed([first_down(en) for _, en in risks], "and")
+        if products:
+            what_fr += f" dans {listed(products, 'et')}"
+            what_en += f" in {listed(products, 'and')}"
+    else:
+        what_fr, what_en = title_fr, title_en
     return {
         "id": f"certfr-{alert.number.removeprefix('CERTFR-')}",
         "severity": level,
         "severity_reason": dict(reason),
         "title": text(title_fr, title_en),
         "first_seen": published,
-        "audience": "les_deux" if is_consumer("", [title_fr]) else "entreprises",
+        "audience": "les_deux" if is_consumer("", [title_fr, *products]) else "entreprises",
         "reliability": "confirme",
         "reliability_source": None,
         "exploited": False,
+        # An alert about flaws, or about a campaign of attacks when it cites no flaw.
+        "kind": "faille" if alert.cves else "attaque",
         "attacker": unknown_attacker(),
-        "victim": {"label": text("Utilisateurs des produits cités", "Users of the products named"), "status": "confirme"},
+        "victim": {"label": victim, "status": "confirme"},
         "method": text("Faille signalée par le CERT-FR", "Flaw reported by CERT-FR") if alert.cves else None,
-        "loot": None,
+        "loot": text(*risks[0]) if risks else None,
         "am_i_affected": text(
             "Oui, si vous utilisez un produit cité dans l'alerte.",
             "Yes, if you use a product named in the alert.",
@@ -301,8 +357,8 @@ def certfr_card(alert: CertfrAlert) -> dict | None:
             "Follow the recommendations of the CERT-FR alert.",
         ),
         "summary": [text(
-            f"Le CERT-FR a publié le {french_date(day)} l'alerte {alert.number} : {title_fr}.",
-            f"CERT-FR published alert {alert.number} on {english_date(day)}: {title_en}.",
+            f"Alerte du CERT-FR du {french_date(day)} : {what_fr}.",
+            f"CERT-FR alert of {english_date(day)}: {what_en}.",
         )],
         "timeline": [{"date": published, "label": text(f"Alerte {alert.number} du CERT-FR", f"CERT-FR alert {alert.number}")}],
         "protection_steps": [],
@@ -370,6 +426,7 @@ def claim_card(claim: Claim) -> dict:
         "reliability": "confirme",
         "reliability_source": None,
         "exploited": False,
+        "kind": "attaque",
         "attacker": {"name": text(f"Groupe {group}", f"{group} group"), "country": None, "status": "revendique", "source": None},
         "victim": {"label": text(victim, victim), "status": "revendique"},
         "method": text("Inconnue à ce stade", "Unknown at this stage"),

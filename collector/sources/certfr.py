@@ -1,6 +1,6 @@
 """CERT-FR alerts (B4): the alerts of the last 7 days and the CVE numbers they cite, read in the
-feed and, when robots.txt allows it, in the cve.org links of each alert page (the feed shortens
-descriptions, so it may miss some).
+feed and, when robots.txt allows it, in each alert page: its cve.org links (the feed shortens
+descriptions, so it may miss some) and its lists "Systèmes affectés" and "Risques".
 
 The feed is read with defusedxml and no DTD at all: no entity, no external file, so neither an
 XXE nor a "billion laughs" can go through. A broken item is skipped and counted."""
@@ -11,6 +11,7 @@ import logging
 import re
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
+from html.parser import HTMLParser
 from urllib.parse import urlsplit
 from urllib.robotparser import RobotFileParser
 
@@ -19,7 +20,7 @@ from defusedxml.ElementTree import ParseError, fromstring
 
 from .. import config
 from ..models import CertfrAlert, host_is, is_safe_url
-from ..text import BrokenText, clean
+from ..text import BrokenText, clean, fold
 from . import Fetcher, SourceError, window_start
 
 NAME = "CERT-FR, alertes"
@@ -98,17 +99,84 @@ class Robots:
         return rules is not None and rules.can_fetch(config.USER_AGENT, url)
 
 
-def with_page_cves(fetcher: Fetcher, alerts: list[CertfrAlert]) -> list[CertfrAlert]:
-    """The alerts, with the CVE numbers that their page links to cve.org added."""
+class Lists(HTMLParser):
+    """The items of the lists under the headings "Risque(s)" and "Systèmes affectés" of an alert
+    page. Only the text of the items is kept: no attribute, no comment, no script."""
+
+    SECTIONS = {"risque": "risks", "risques": "risks", "systemes affectes": "systems"}
+    MAX_ITEMS = 30
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.found: dict[str, list[str]] = {"risks": [], "systems": []}
+        self._heading: list[str] | None = None
+        self._section: str | None = None
+        self._item: list[str] | None = None
+        self._skip = 0
+
+    def handle_starttag(self, tag, attrs):
+        if tag in ("script", "style", "template"):
+            self._skip += 1
+        elif tag in ("h1", "h2", "h3", "h4"):
+            self._heading, self._section = [], None
+        elif tag == "li" and self._section and self._item is None:
+            self._item = []
+
+    def handle_endtag(self, tag):
+        if tag in ("script", "style", "template"):
+            self._skip = max(0, self._skip - 1)
+        elif tag in ("h1", "h2", "h3", "h4") and self._heading is not None:
+            self._section = self.SECTIONS.get(fold(" ".join("".join(self._heading).split())))
+            self._heading = None
+        elif tag == "li" and self._item is not None:
+            items = self.found[self._section]
+            if len(items) < self.MAX_ITEMS:
+                items.append("".join(self._item))
+            self._item = None
+
+    def handle_data(self, data):
+        if self._skip:
+            return
+        if self._heading is not None:
+            self._heading.append(data)
+        elif self._item is not None:
+            self._item.append(data)
+
+
+def page_details(page: str) -> tuple[list[str], list[str], list[str]]:
+    """The CVE numbers linked to cve.org, and the lists "Systèmes affectés" and "Risques" of an
+    alert page. A broken item is skipped; a broken page gives empty lists."""
+    lists = Lists()
+    try:
+        lists.feed(page)
+        lists.close()
+    except (AssertionError, ValueError, RecursionError):
+        pass
+    kept = {}
+    for key, items in lists.found.items():
+        kept[key] = []
+        for item in items:
+            try:
+                value = clean(item, config.MAX_NAME)
+            except BrokenText:
+                continue
+            if value:
+                kept[key].append(value)
+    return CVE_LINK.findall(page), unique(kept["systems"]), unique(kept["risks"])
+
+
+def with_page_details(fetcher: Fetcher, alerts: list[CertfrAlert]) -> list[CertfrAlert]:
+    """The alerts, with what their page adds: CVE numbers linked to cve.org, affected systems and
+    risks. When robots.txt forbids the page, or it cannot be read, the feed alone is used."""
     robots = Robots(fetcher)
     result = []
     for alert in alerts:
-        cves = list(alert.cves)
+        cves, systems, risks = list(alert.cves), [], []
         if robots.allows(alert.url):
             try:
-                page = fetcher.get(alert.url).decode("utf-8", "replace")
-                cves += CVE_LINK.findall(page)
+                page_cves, systems, risks = page_details(fetcher.get(alert.url).decode("utf-8", "replace"))
+                cves += page_cves
             except SourceError as error:
                 log.warning("CERT-FR : page de l'alerte %s illisible (%s)", alert.number, error)
-        result.append(alert.model_copy(update={"cves": unique(cves)}))
+        result.append(alert.model_copy(update={"cves": unique(cves), "systems": systems, "risks": risks}))
     return result

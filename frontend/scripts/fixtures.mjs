@@ -603,6 +603,7 @@ export function buildAlert(n, now) {
   return {
     ...alert,
     id: `${alert.id}-${n + 1}`,
+    kind: 'attaque',
     severity: 'critique',
     first_seen: ago(0),
     audience: 'les_deux',
@@ -614,11 +615,14 @@ export function buildAlert(n, now) {
   };
 }
 
+/** The test cards about a flaw; the others are attacks. */
+const FLAWS = new Set(['test-amperys']);
+
 /** A test feed, as the collector would write it: the usual day, or a calm one. */
 export function buildFeed(now, { calm = false } = {}) {
   return {
     generated_at: new Date(now - 12 * 60_000).toISOString(),
-    attacks: calm ? calmDay(now) : usualDay(now),
+    attacks: (calm ? calmDay(now) : usualDay(now)).map((card) => ({ ...card, kind: FLAWS.has(card.id) ? 'faille' : 'attaque' })),
   };
 }
 

@@ -56,11 +56,14 @@ def test_kev_widespread_software_is_grave():
     )
     assert card["audience"] == "les_deux"  # a NAS, found at home too
     assert card["first_seen"] == "2026-11-18"
-    assert card["summary"][0]["fr"].startswith(
-        "La CISA, l'agence américaine de cybersécurité, a ajouté cette faille de Synology DiskStation Manager (DSM)"
-    )
-    assert card["summary"][0]["en"].startswith("CISA, the US cybersecurity agency, added this Synology DiskStation Manager (DSM) flaw")
+    assert card["summary"] == [both(
+        "Encodage de sortie incorrect dans Synology DSM : un attaquant à distance peut exécuter du code. "
+        "La CISA l'a ajoutée à sa liste des failles exploitées le 18 novembre 2026.",
+        "Improper output encoding in Synology DSM: a remote attacker can run code. "
+        "CISA added it to its list of exploited flaws on 18 November 2026.",
+    )]
     assert card["technical"]["software"] == ["Synology DiskStation Manager (DSM)"]
+    assert card["kind"] == "faille"
 
 
 def test_kev_less_common_software_is_significant():
@@ -73,8 +76,58 @@ def test_kev_less_common_software_is_significant():
         "Oui, si vous utilisez BerriAI LiteLLM sans la dernière mise à jour.",
         "Yes, if you use BerriAI LiteLLM without the latest update.",
     )
-    assert card["method"] == both("Faille déjà exploitée par des attaquants", "Flaw already exploited by attackers")
-    assert card["loot"] == both("Accès possible aux systèmes non mis à jour", "Possible access to systems not updated")
+    assert card["method"] == both("Canal alternatif non protégé", "Unprotected alternate channel")
+    assert card["loot"] == both("Exécution de code à distance", "Remote code execution")
+
+
+def test_kev_method_is_the_type_of_flaw():
+    """From the name the CISA gives the flaw, else from its CWE numbers; generic when unknown."""
+    assert card_for("CVE-2026-90817")["method"] == both("Injection de code", "Code injection")  # name, not CWE-73
+    assert card_for("CVE-2026-59310")["method"] == both("Traversée de répertoires", "Path traversal")
+    assert card_for("CVE-2026-125350")["method"] == both("Utilisation de mémoire libérée", "Use after free")
+    assert card_for("CVE-2008-4128")["method"] == both("Falsification de requête intersite (CSRF)", "Cross-site request forgery (CSRF)")
+    # "Remote Code Execution Vulnerability", without CWE: the type is not known.
+    assert card_for("CVE-2010-3765")["method"] == both("Faille déjà exploitée par des attaquants", "Flaw already exploited by attackers")
+    entry = KevEntry(cve="CVE-2099-0004", vendor="Exemple", product="Passerelle", name="Exemple Passerelle Vulnerability",
+                     cwes=["CWE-89"], date_added=date(2026, 11, 18))
+    assert cards.kev_card(entry)["method"] == both("Injection SQL", "SQL injection")  # from the CWE
+
+
+def test_kev_impact_comes_from_the_words_of_the_cisa():
+    assert card_for("CVE-2026-90817")["loot"] == both("Exécution de code", "Code execution")  # no "remote" in the text
+    assert card_for("CVE-2008-4128")["loot"] == both("Exécution de commandes à distance", "Remote command execution")
+    assert card_for("CVE-2026-123039")["loot"] == both("Élévation de privilèges", "Privilege escalation")  # "executed as root"
+    assert card_for("CVE-2026-96951")["loot"] == both("Contournement d'une protection", "Protection bypass")
+    entry = KevEntry(cve="CVE-2099-0005", vendor="Exemple", product="Passerelle", description="Exemple Passerelle contains a flaw.",
+                     date_added=date(2026, 11, 18))
+    assert cards.kev_card(entry)["loot"] is None  # nothing in the table: "Non communiqué" on the site
+
+
+def test_kev_who_can_exploit_the_flaw_is_read_in_the_sentence_of_the_impact():
+    summary = card_for("CVE-2026-123039")["summary"][0]  # Check Point: the second sentence names the user
+    assert summary["fr"].startswith(
+        "Permissions mal attribuées dans des produits Check Point : un utilisateur local connecté peut obtenir des droits plus élevés."
+    )
+    assert summary["en"].startswith(
+        "Incorrect permission assignment in Check Point products: a logged-in local user can gain higher privileges."
+    )
+    axis = card_for("CVE-2026-90436")["summary"][0]
+    assert axis["fr"].startswith("Réflexion non sûre dans Apache Axis : un attaquant à distance, sans compte, peut exécuter du code.")
+    assert axis["en"].startswith("Unsafe reflection in Apache Axis: a remote attacker without an account can run code.")
+    windows = card_for("CVE-2026-96951")["summary"][0]
+    assert windows["en"].startswith("Command injection in Microsoft Windows: an unauthorized remote attacker can get around a protection.")
+    # "as the service user" names no one who exploits the flaw: the actor follows "allows", or
+    # is the subject of the sentence.
+    puppet = card_for("CVE-2026-115731")["summary"][0]
+    assert puppet["fr"].startswith("Désérialisation de données non fiables dans Perforce Puppet Enterprise : un attaquant peut exécuter du code.")
+
+
+def test_kev_summaries_differ_from_card_to_card():
+    """Each summary says what the flaw is and allows; the CISA is introduced in "Méthode et sources"."""
+    built = [cards.kev_card(entry) for entry in ENTRIES.values()]
+    openings = [card["summary"][0]["fr"].split(". ")[0] for card in built]
+    assert len(set(openings)) == len(openings)
+    assert not any("agence américaine" in card["summary"][0]["fr"] or "US cybersecurity agency" in card["summary"][0]["en"] for card in built)
 
 
 def test_kev_uses_the_short_name_in_brackets():
@@ -85,8 +138,9 @@ def test_kev_uses_the_short_name_in_brackets():
         "Oui, si vous utilisez REDCap sans la dernière mise à jour.",
         "Yes, if you use REDCap without the latest update.",
     )
-    assert "Research Electronic Data Capture (REDCap)" in card["summary"][0]["fr"]
-    assert "Research Electronic Data Capture (REDCap)" in card["summary"][0]["en"]
+    assert card["summary"][0]["fr"].startswith("Injection de code dans REDCap : un attaquant sans compte peut exécuter du code.")
+    assert card["summary"][0]["en"].startswith("Code injection in REDCap: an attacker without an account can run code.")
+    assert card["technical"]["software"] == ["Vanderbilt University Research Electronic Data Capture (REDCap)"]  # full name
 
 
 def test_both_languages_always_take_the_same_variant():
@@ -151,6 +205,13 @@ def test_kev_widespread_programs_and_ransomware_use():
     assert card["severity"] == "grave"
     assert card["summary"][0]["fr"].endswith("Elle sert déjà dans des attaques par rançongiciel, selon la CISA.")
     assert card["summary"][0]["en"].endswith("According to CISA, it is already used in ransomware attacks.")
+    assert card["attacker"] == {
+        "name": both("Utilisée par des rançongiciels, selon la CISA", "Used by ransomware, according to CISA"),
+        "country": None,
+        "status": "confirme",
+        "source": "CISA",
+    }
+    assert card_for("CVE-2026-40217")["attacker"]["status"] == "inconnu"  # "Unknown" ransomware use: origin unknown
     assert card_for("CVE-2026-59310")["severity"] == "grave"  # VMware, filed under Broadcom
     assert card_for("CVE-2026-123039")["severity"] == "grave"  # Check Point
 
@@ -158,10 +219,10 @@ def test_kev_widespread_programs_and_ransomware_use():
 def test_kev_summary_timeline_sources():
     card = card_for("CVE-2026-40217")
     assert card["summary"] == [both(
-        "La CISA, l'agence américaine de cybersécurité, a ajouté cette faille de BerriAI LiteLLM "
-        "à sa liste des failles exploitées le 18 novembre 2026.",
-        "CISA, the US cybersecurity agency, added this BerriAI LiteLLM flaw "
-        "to its list of exploited flaws on 18 November 2026.",
+        "Canal alternatif non protégé dans BerriAI LiteLLM : un attaquant à distance peut exécuter du code. "
+        "La CISA l'a ajoutée à sa liste des failles exploitées le 18 novembre 2026.",
+        "Unprotected alternate channel in BerriAI LiteLLM: a remote attacker can run code. "
+        "CISA added it to its list of exploited flaws on 18 November 2026.",
     )]
     assert card["timeline"] == [
         {"date": "2026-11-18", "label": both("Ajout à la liste des failles exploitées de la CISA", "Added to the CISA list of exploited flaws")},
@@ -246,10 +307,12 @@ def test_certfr_card():
         "Follow the recommendations of the CERT-FR alert.",
     )
     assert card["first_seen"] == "2026-11-18"
+    # Without its page (robots.txt, or a page that cannot be read), the card says what the feed says.
     assert card["summary"] == [both(
-        "Le CERT-FR a publié le 18 novembre 2026 l'alerte CERTFR-2026-ALE-017 : Multiples vulnérabilités dans F5 NGINX.",
-        "CERT-FR published alert CERTFR-2026-ALE-017 on 18 November 2026: Multiple vulnerabilities in F5 NGINX.",
+        "Alerte du CERT-FR du 18 novembre 2026 : Multiples vulnérabilités dans F5 NGINX.",
+        "CERT-FR alert of 18 November 2026: Multiple vulnerabilities in F5 NGINX.",
     )]
+    assert card["kind"] == "faille"
     assert card["sources"] == [{
         "name": "CERT-FR",
         "title": both("Alerte CERTFR-2026-ALE-017", "Alert CERTFR-2026-ALE-017"),
@@ -257,6 +320,53 @@ def test_certfr_card():
         "official": True,
     }]
     assert card["untranslated"] == []
+
+
+def test_certfr_targets_and_impact_come_from_the_alert_page():
+    cves, systems, risks = certfr.page_details(sample("certfr-page.html").decode("utf-8"))
+    assert systems[0] == "NGINX Open Source versions 1.31.x antérieures à 1.31.9" and len(systems) == 4
+    assert risks == ["Exécution de code arbitraire à distance"]
+    alert = ALERTS["CERTFR-2026-ALE-017"].model_copy(update={"systems": systems, "risks": risks})
+    card = cards.certfr_card(alert)
+    assert card["victim"]["label"] == both("Utilisateurs de produits NGINX", "Users of NGINX products")
+    assert card["loot"] == both("Exécution de code arbitraire à distance", "Remote arbitrary code execution")
+    assert card["summary"] == [both(
+        "Alerte du CERT-FR du 18 novembre 2026 : exécution de code arbitraire à distance dans NGINX Open Source et NGINX Plus.",
+        "CERT-FR alert of 18 November 2026: remote arbitrary code execution in NGINX Open Source and NGINX Plus.",
+    )]
+
+
+def test_certfr_targets_fit_or_fall_back():
+    def label(systems):
+        alert = ALERTS["CERTFR-2026-ALE-017"].model_copy(update={"systems": systems})
+        return cards.certfr_card(alert)["victim"]["label"]
+
+    assert label(["FortiOS 7.4.x antérieures à 7.4.5"]) == both("Utilisateurs de FortiOS", "FortiOS users")
+    assert label(["Ivanti EPMM versions 12.x antérieures à 12.5", "Ivanti Neurons 1.x"]) == both(
+        "Utilisateurs d'Ivanti EPMM et Ivanti Neurons", "Ivanti EPMM and Ivanti Neurons users"
+    )
+    # Two names too long together: the vendor they share.
+    assert label(["Exemple Passerelle versions antérieures à 2.1", "Exemple Console 3.x"]) == both(
+        "Utilisateurs de produits Exemple", "Users of Exemple products"
+    )
+    assert label(["Oracle Java SE version 21", "Oracle GraalVM for JDK version 17", "Oracle GraalVM Enterprise Edition version 21"]) == both(
+        "Utilisateurs de produits Oracle", "Users of Oracle products"
+    )
+    assert label(["Produit Un 1.2", "Autre Produit 3.4", "Encore Un 5.6"]) == both(
+        "Utilisateurs des produits cités", "Users of the products named"
+    )
+
+
+def test_certfr_risks_are_translated_by_a_table_and_ordered():
+    risks = ["Déni de service à distance", "Atteinte à la confidentialité des données", "Exécution de code arbitraire à distance",
+             "Non spécifié par l'éditeur"]
+    assert cards.flaws.known_risks(risks) == [
+        ("Exécution de code arbitraire à distance", "Remote arbitrary code execution"),
+        ("Atteinte à la confidentialité des données", "Breach of data confidentiality"),
+        ("Déni de service à distance", "Remote denial of service"),
+    ]
+    alert = ALERTS["CERTFR-2026-ALE-017"].model_copy(update={"risks": ["Non spécifié par l'éditeur"]})
+    assert cards.certfr_card(alert)["loot"] is None  # unknown to the table: "Non communiqué"
 
 
 def test_certfr_titles_in_the_usual_forms_are_translated():

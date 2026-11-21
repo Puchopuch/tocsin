@@ -150,7 +150,7 @@ def test_a_broken_feed_is_a_clean_failure_or_gives_nothing(body):
 def test_a_broken_alert_page_keeps_the_cves_of_the_feed(page):
     table = {**SOURCES, "https://www.cert.cyber.gouv.fr/alerte/CERTFR-2026-ALE-017/": (200, page)}
     with fetcher(table) as client:
-        alerts = certfr.with_page_cves(client, certfr.recent(certfr.parse(sample("certfr-alertes.xml")), NOW))
+        alerts = certfr.with_page_details(client, certfr.recent(certfr.parse(sample("certfr-alertes.xml")), NOW))
     nginx = next(alert for alert in alerts if alert.number == "CERTFR-2026-ALE-017")
     assert set(nginx.cves) == {"CVE-2026-123007", "CVE-2026-123633"}
 

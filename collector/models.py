@@ -91,9 +91,17 @@ class KevEntry(Model):
     product: str = Field(min_length=1)
     name: str = ""
     description: str = ""
+    required_action: str = ""
+    cwes: list[str] = Field(default_factory=list, max_length=20)
     date_added: date
     due_date: date | None = None
     ransomware: str = ""
+
+    @field_validator("cwes")
+    @classmethod
+    def _cwes(cls, values: list[str]) -> list[str]:
+        # A number that is not a CWE is dropped, not the entry: the type of flaw is a detail.
+        return [value for value in values if re.fullmatch(r"CWE-\d{1,5}", value)]
 
 
 class CertfrAlert(Model):
@@ -104,6 +112,9 @@ class CertfrAlert(Model):
     url: str
     published: datetime
     cves: list[str] = Field(default_factory=list)
+    # The lists "Systèmes affectés" and "Risques" of the alert page, when it could be read.
+    systems: list[str] = Field(default_factory=list)
+    risks: list[str] = Field(default_factory=list)
 
 
 class Claim(Model):
@@ -227,6 +238,9 @@ class Card(Model):
     reliability_source: Plain | None = None
     # True only when a source confirms that the flaw is already exploited (the CISA catalogue).
     exploited: bool = False
+    # A flaw (an alert about software) or an attack (against an organisation): the site says
+    # "alertes" or "attaques" accordingly.
+    kind: Literal["faille", "attaque"]
     attacker: Attacker | None = None
     victim: Victim
     method: Text | None = None

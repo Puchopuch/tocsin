@@ -421,7 +421,7 @@ try {
     const text = await page.evaluate(() => document.body.innerText);
     const une = clean(await page.locator('.une .une__title').textContent());
     report('Anglais : <html lang="en">, titre de page et onglets Critical, Severe, Significant, Minor', state.lang === 'en' && state.title === `${APP_NAME}, today’s cyberattacks` && JSON.stringify(tabs) === JSON.stringify(['All 8', 'Critical 1', 'Severe 2', 'Significant 3', 'Minor 2']), `${state.lang} ; ${state.title} ; ${tabs.join(', ')}`);
-    report('Anglais : phrase du jour et « Updated at » de la collecte', (await digestText(page)) === 'Since yesterday: 1 critical and 2 severe attacks. 2 affect the general public.' && (await updatedText(page)) === 'Updated at 14:48', `${await digestText(page)} ; ${await updatedText(page)}`);
+    report('Anglais : phrase du jour et « Updated at » de la collecte', (await digestText(page)) === 'Since yesterday: 1 critical and 2 severe alerts. 2 affect the general public.' && (await updatedText(page)) === 'Updated at 14:48', `${await digestText(page)} ; ${await updatedText(page)}`);
     report('Anglais : les cartes parlent anglais', une === 'Massive data leak at the operator TelecomX' && /Am I affected\?/.test(text) && /What to do:/.test(text) && /Not disclosed/.test(text), une);
     report('Anglais : aucun texte de l’interface en français', !FRENCH_UI.test(text), FRENCH_UI.exec(text)?.[0] ?? '');
     report('Typographie française seulement en français : aucune espace insécable avant « : ; ? ! » en anglais', !/[  ][:;?!»]/.test(text) && !/«/.test(text));
@@ -500,7 +500,7 @@ try {
     const { context, page, errors } = await openPage();
     const tabs = await tabTexts(page);
     report('Onglets : Toutes 8, Critique 1, Grave 2, Significative 3, Mineure 2', JSON.stringify(tabs) === JSON.stringify(['Toutes 8', 'Critique 1', 'Grave 2', 'Significative 3', 'Mineure 2']), tabs.join(', '));
-    report('Phrase calculée sur les cartes', (await digestText(page)) === 'Depuis hier : 1 attaque critique et 2 graves. 2 concernent le grand public.', await digestText(page));
+    report('Phrase calculée sur les cartes', (await digestText(page)) === 'Depuis hier : 1 alerte critique et 2 graves. 2 concernent le grand public.', await digestText(page));
     const stamp = await page.locator('.site-header__updated time').getAttribute('datetime');
     report('« Mis à jour à … » : l’heure de la collecte inscrite dans le fichier', (await updatedText(page)) === 'Mis à jour à 14 h 48' && stamp === usual.generated_at, `${await updatedText(page)} ; ${stamp}`);
     const l = await layout(page);
@@ -594,7 +594,7 @@ try {
     report('Une nouvelle attaque critique passe à la une', alert.l.une?.includes('Ferlino') && alert.l.two === 3 && alert.tabs[0] === 'Toutes 9' && alert.tabs[1] === 'Critique 2', `${alert.l.une} ; ${alert.tabs.join(', ')}`);
     report(
       'La phrase du jour suit les cartes : journée calme, puis alerte',
-      quiet.text !== alert.text && alert.text === 'Depuis hier : 2 attaques critiques et 2 graves. 3 concernent le grand public.',
+      quiet.text !== alert.text && alert.text === 'Depuis hier : 2 alertes critiques et 2 graves. 3 concernent le grand public.',
       alert.text,
     );
 
@@ -603,8 +603,22 @@ try {
     report(
       'La période écrite correspond aux dates des cartes : « Aujourd’hui », « Depuis hier », « Ces sept derniers jours »',
       today.text === 'Aujourd’hui : 1 attaque critique et 1 grave. 2 concernent le grand public.' &&
-        week.text === 'Ces sept derniers jours : 1 attaque critique et 2 graves. 2 concernent le grand public.',
+        week.text === 'Ces sept derniers jours : 1 alerte critique et 2 graves. 2 concernent le grand public.',
       `${today.text} | ${week.text}`,
+    );
+
+    // "attaques" only when every card counted is an attack; flaws alone, or mixed: "alertes".
+    const flawsOnly = { ...usual, attacks: usual.attacks.map((card) => ({ ...card, kind: 'faille' })) };
+    const flaws = await sentence(flawsOnly);
+    const english = await openPage({ feed: flawsOnly, locale: 'en-GB' });
+    const flawsEnglish = await digestText(english.page);
+    await english.context.close();
+    report(
+      'Phrase du jour : « alertes » tant qu’il s’agit de failles, « attaques » seulement si toutes les cartes comptées sont des attaques',
+      flaws.text === 'Depuis hier : 1 alerte critique et 2 graves. 2 concernent le grand public.' &&
+        flawsEnglish === 'Since yesterday: 1 critical and 2 severe alerts. 2 affect the general public.' &&
+        today.text.includes('attaque critique'),
+      `${flaws.text} | ${flawsEnglish} | ${today.text}`,
     );
   }
 
@@ -1049,6 +1063,7 @@ try {
       const total = (await tabTexts(page))[0] ?? '';
       const stamp = (await page.locator('.site-header__updated time').getAttribute('datetime').catch(() => null)) ?? '';
       const text = await page.evaluate(() => document.body.innerText);
+      const sentence = shown > 0 ? await digestText(page) : '';
       await page.setViewportSize({ width: 390, height: 844 });
       await page.screenshot({ path: path.join(captures, `reel-390-${lang}.png`), fullPage: true });
       await context.close();
@@ -1056,6 +1071,7 @@ try {
         ok: (shown === 0 || total === `${all} ${shown}`) && Date.parse(stamp) === Date.parse(real.generated_at) && errors.length === 0,
         other: lang === 'en' ? FRENCH_UI.exec(text)?.[0] : ENGLISH_UI.exec(text)?.[0],
         shown,
+        sentence,
       };
     }
     report(
@@ -1063,6 +1079,13 @@ try {
       seen.fr.ok && seen.en.ok && seen.fr.shown === seen.en.shown && !seen.fr.other && !seen.en.other,
       `collecte ${real.generated_at}${seen.en.other ? ` ; en anglais : « ${seen.en.other} »` : ''}${seen.fr.other ? ` ; en français : « ${seen.fr.other} »` : ''}`,
     );
+    if (real.attacks.length > 0 && real.attacks.every((card) => card.kind === 'faille')) {
+      report(
+        'Vraies cartes, toutes des failles : la phrase du jour parle d’« alertes », jamais d’« attaques »',
+        !/attaque/i.test(seen.fr.sentence) && !/attack/i.test(seen.en.sentence) && /alerte|aucune/.test(seen.fr.sentence),
+        `${seen.fr.sentence} | ${seen.en.sentence}`,
+      );
+    }
   } else {
     console.log('(public/data/cards.json absent : pas de capture des vraies cartes)');
   }

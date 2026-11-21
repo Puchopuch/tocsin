@@ -32,6 +32,8 @@ def parse(body: bytes) -> list[KevEntry]:
                 product=clean(raw["product"], config.MAX_NAME),
                 name=clean(raw.get("vulnerabilityName"), config.MAX_NAME),
                 description=clean(raw.get("shortDescription"), config.MAX_DESCRIPTION),
+                required_action=clean(raw.get("requiredAction"), config.MAX_DESCRIPTION),
+                cwes=[clean(cwe, 20) for cwe in (raw.get("cwes") or [])[:20]],
                 date_added=clean(raw["dateAdded"], 10),
                 due_date=clean(raw.get("dueDate"), 10) or None,
                 ransomware=clean(raw.get("knownRansomwareCampaignUse"), 20),
