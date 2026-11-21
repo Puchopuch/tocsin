@@ -269,9 +269,10 @@ pages run at a fixed moment, Friday 20 November 2026 at 15:00 in Paris. It cover
   `collector/tests/data/links.json`, refused or kept as by the collector; the files of the build
   (a list of allowed names, no key, no trace of `.env`, `state.db` or test data); `index.html`
   read by the HTML parser of the browser, never by a regular expression: one script, from the
-  site, no inline script, `on…` attribute or `javascript:` link, one CSP placed before the script;
-  that check tried on 14 trapped pages (capitals, `</script >`, a line break, `<script/x>`, a
-  comment, a `<template>`, `<svg/onload>`…), each caught; the CSP, directive by directive, and a
+  site, no inline script, no `on…` attribute, no `javascript:`, `vbscript:` or `data:` link (but
+  an image, like the icon of the tab), one CSP placed before the script; that check tried on 16
+  trapped pages (capitals, `</script >`, a line break, `<script/x>`, a comment, a `<template>`,
+  `<svg/onload>`, `vbscript:`, a frame in `data:`…), each caught; the CSP, directive by directive, and a
   control that it really blocks
   `innerHTML`, `eval`, `new Function` and inline scripts; `<script>`, `<img onerror>`,
   `<svg onload>` and `javascript:` in every field of the cards and in the search, in both

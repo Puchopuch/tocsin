@@ -316,23 +316,33 @@ async function readHtml(text) {
     const policies = elements.filter(
       (element) => element.localName === 'meta' && (element.getAttribute('http-equiv') ?? '').trim().toLowerCase() === 'content-security-policy',
     );
-    // A link is read as the browser reads it: entities decoded, tabs and line breaks dropped.
-    const runsScript = (value) => {
+    // A link is read as the browser reads it: entities decoded, tabs and line breaks dropped. A link
+    // that could run code is refused: javascript:, vbscript:, and data: anywhere but as an image
+    // (<img>, or the icon of the tab, which is one).
+    const runsCode = (element, value) => {
+      let url;
       try {
-        return new URL(value, 'https://page.invalid/').protocol === 'javascript:';
+        url = new URL(value, 'https://page.invalid/');
       } catch {
         return false;
       }
+      if (url.protocol === 'javascript:' || url.protocol === 'vbscript:') return true;
+      if (url.protocol === 'data:') {
+        const rel = (element.getAttribute('rel') ?? '').toLowerCase().split(/\s+/);
+        const image = element.localName === 'img' || (element.localName === 'link' && rel.includes('icon'));
+        return !(image && url.pathname.toLowerCase().startsWith('image/'));
+      }
+      return false;
     };
-    const LINKS = ['href', 'src', 'action', 'formaction', 'xlink:href'];
+    const LINKS = ['href', 'src', 'action', 'formaction', 'xlink:href', 'data'];
     return {
       scripts: scripts.map((script) => ({ src: script.getAttribute('src'), text: script.textContent.trim().length })),
       handlers: elements.flatMap((element) =>
         [...element.attributes].filter((attribute) => attribute.name.startsWith('on')).map((attribute) => `${element.localName}[${attribute.name}]`),
       ),
-      javascript: elements.flatMap((element) =>
+      codeLinks: elements.flatMap((element) =>
         [...element.attributes]
-          .filter((attribute) => LINKS.includes(attribute.name) && runsScript(attribute.value))
+          .filter((attribute) => LINKS.includes(attribute.name) && runsCode(element, attribute.value))
           .map((attribute) => `${element.localName}[${attribute.name}]`),
       ),
       policies: policies.map((meta) => meta.getAttribute('content') ?? ''),
@@ -351,7 +361,7 @@ function judgePage(facts) {
     if (script.text > 0) wrong.push('texte dans une balise script');
   }
   if (facts.handlers.length > 0) wrong.push(`attributs ${facts.handlers.join(', ')}`);
-  if (facts.javascript.length > 0) wrong.push(`liens javascript: ${facts.javascript.join(', ')}`);
+  if (facts.codeLinks.length > 0) wrong.push(`liens qui exécutent du code ${facts.codeLinks.join(', ')}`);
   if (facts.policies.length !== 1) wrong.push(`${facts.policies.length} CSP`);
   else if (!facts.policyFirst) wrong.push('CSP placée après un script');
   return wrong;
@@ -361,7 +371,7 @@ function judgePage(facts) {
   const facts = await readHtml(await readFile(path.join(out, 'index.html'), 'utf8'));
   const problems = judgePage(facts);
   report(
-    'index.html construit, lu par le parseur HTML du navigateur : un seul script, chargé depuis le site ; ni script en ligne, ni attribut on…, ni lien javascript: ; une seule CSP, placée avant le script',
+    'index.html construit, lu par le parseur HTML du navigateur : un seul script, chargé depuis le site ; ni script en ligne, ni attribut on…, ni lien javascript:, vbscript: ou data: (hors image) ; une seule CSP, placée avant le script',
     problems.length === 0,
     problems.join(' | ') || facts.scripts.map((script) => script.src).join(' '),
   );
@@ -403,6 +413,7 @@ function judgePage(facts) {
   const GOOD = {
     'page correcte': page(csp + bundle),
     'page correcte en capitales': page('<META HTTP-EQUIV="Content-Security-Policy" CONTENT="default-src \'self\'"><SCRIPT TYPE="module" SRC="./assets/index-Abc123.js"></SCRIPT>'),
+    'page correcte avec une icône en data:': page(`<link rel="icon" href="data:image/svg+xml,%3Csvg%3E%3C/svg%3E">${csp}${bundle}`),
   };
   const TRAPS = {
     '<SCRIPT> en capitales': page(csp + bundle, '<SCRIPT>alert(1)</SCRIPT>'),
@@ -416,6 +427,8 @@ function judgePage(facts) {
     'ONERROR en capitales': page(csp + bundle, '<IMG SRC=x ONERROR=alert(1)>'),
     '<svg/onload>': page(csp + bundle, '<svg/onload=alert(1)>'),
     'lien javascript: coupé par une tabulation': page(csp + bundle, '<a href="jav&#x09;ascript:alert(1)">x</a>'),
+    'lien vbscript:': page(csp + bundle, '<a href="VBScript:msgbox(1)">x</a>'),
+    'cadre en data:text/html': page(csp + bundle, '<iframe src="data:text/html,<script>alert(1)</script>"></iframe>'),
     'CSP placée après le script': page(bundle + csp),
     'aucune CSP': page(bundle),
     'deux CSP': page(csp + csp + bundle),
@@ -425,7 +438,7 @@ function judgePage(facts) {
   const refused = [];
   for (const [name, html] of Object.entries(GOOD)) if (judgePage(await readHtml(html)).length > 0) refused.push(name);
   report(
-    `Vérification de index.html essayée sur ${Object.keys(TRAPS).length} pages piégées (capitales, </script >, retour à la ligne, <script/x>, commentaire, <template>, autre site, ONERROR, <svg/onload>, javascript: coupé, CSP absente, double ou après le script) : toutes attrapées ; la page correcte passe, même en capitales`,
+    `Vérification de index.html essayée sur ${Object.keys(TRAPS).length} pages piégées (capitales, </script >, retour à la ligne, <script/x>, commentaire, <template>, autre site, ONERROR, <svg/onload>, javascript: coupé, vbscript:, cadre en data:, CSP absente, double ou après le script) : toutes attrapées ; la page correcte passe, même en capitales ou avec une icône en data:`,
     missed.length === 0 && refused.length === 0,
     [...missed.map((name) => `non attrapée : ${name}`), ...refused.map((name) => `refusée à tort : ${name}`)].join(' | '),
   );
