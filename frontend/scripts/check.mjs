@@ -1085,6 +1085,9 @@ try {
       ['en', 'en-GB', 'All'],
     ]) {
       const { context, page, errors } = await openPage({ feed: null, timers: 'real', waitFor: `${CARDS}, .state`, locale });
+      // The images of the README: the real cards, as a reader sees them on arriving (a Playwright
+      // capture of the built site, never a capture of anybody's screen).
+      await page.screenshot({ path: path.join(captures, `readme-${lang}.png`) });
       await page.screenshot({ path: path.join(captures, `reel-1440-${lang}.png`), fullPage: true });
       const shown = await page.locator(CARDS).count();
       const total = (await tabTexts(page))[0] ?? '';

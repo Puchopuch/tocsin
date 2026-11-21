@@ -9,9 +9,9 @@ STATE_PATH = ROOT / "collector" / "state.db"
 JOURNAL_PATH = ROOT / "collector" / "logs" / "collector.log"
 ENV_PATH = ROOT / ".env"
 
-# Politeness (B4). The repository URL joins the User-Agent once the repository is public: until
-# then it would only show the owner's account and lead to a missing page.
-USER_AGENT = "Tocsin-collecteur/0.1"
+# Politeness (B4): the User-Agent names the project, its version and where to read about it.
+VERSION = "1.0.0"
+USER_AGENT = f"Tocsin-collecteur/{VERSION} (+https://github.com/Puchopuch/veille-cyber)"
 TIMEOUT_SECONDS = 20.0
 SECONDS_BETWEEN_REQUESTS = 1.0  # to the same site
 
