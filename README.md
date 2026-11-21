@@ -335,3 +335,10 @@ sources; no article is republished. The texts of the AI are written by
 [Mistral AI](https://mistral.ai/) models, with your key. The font is
 [Inria Sans](https://github.com/BlackFoundryCom/InriaFonts) (SIL Open Font License), served by
 [Fontsource](https://fontsource.org/).
+
+The dragon, emblem of Tocsin, is a woodcut from Ulisse Aldrovandi, *Serpentum et draconum
+historiae libri duo* (Bologna, 1640), **public domain**:
+[Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Dragon_2_Aldrovdani.jpg), scanned by
+the Smithsonian Libraries for the Biodiversity Heritage Library. Cropped, with a transparent
+background and dark grey lines, it is stored in the repository
+(`frontend/src/assets/dragon-aldrovandi.webp`) and never loaded from another site.

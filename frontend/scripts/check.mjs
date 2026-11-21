@@ -6,7 +6,8 @@
 // test cards (scripts/fixtures.mjs) reach the page only by intercepting its request for
 // data/cards.json: no test file is ever written into the site. Each test page runs at a fixed
 // moment, Friday 20 November 2026 at 15:00 in Paris. One line per check; screenshots in
-// captures/ (ignored by git), including the real cards when public/data/cards.json exists.
+// captures/ (ignored by git), including the real cards when public/data/cards.json exists, and the
+// preview image of the repository (apercu-1280x640-fr.png and -en.png).
 //
 // Browser: Playwright's own Chromium (`npx playwright install chromium`, once), or a Chrome or
 // Edge already installed: CHECK_BROWSER=chrome npm run check (or msedge).
@@ -28,6 +29,9 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const captures = path.join(root, 'captures');
 const out = path.join(os.tmpdir(), 'tocsin-check-dist');
 const realFile = path.join(root, 'public', 'data', 'cards.json');
+// The emblem: a public-domain woodcut, stored in the repository (credits in the README).
+const DRAGON = path.join(root, 'src', 'assets', 'dragon-aldrovandi.webp');
+const DRAGON_URL = /\/assets\/dragon-aldrovandi-[\w-]+\.webp"?\)$/;
 const WIDTHS = [360, 390, 768, 1024, 1440];
 
 const NOW = Date.parse('2026-11-20T14:00:00Z');
@@ -198,7 +202,7 @@ await build({ root, logLevel: 'error', build: { outDir: out, emptyOutDir: true }
 {
   const found = [];
   for (const file of await filesIn(out)) {
-    if (/\.(woff2?|png|jpe?g|ico|svg)$/.test(file)) continue;
+    if (/\.(woff2?|png|jpe?g|webp|ico|svg)$/.test(file)) continue;
     const text = await readFile(file, 'utf8');
     const name = path.relative(out, file);
     for (const invention of INVENTED_NAMES) if (text.includes(invention)) found.push(`${name} : ${invention}`);
@@ -215,16 +219,22 @@ await build({ root, logLevel: 'error', build: { outDir: out, emptyOutDir: true }
     /^index\.html$/,
     /^assets\/index-[\w-]+\.(?:js|css)$/,
     /^assets\/inria-sans-latin-(?:300|400|700)-normal-[\w-]+\.woff2$/,
+    /^assets\/dragon-aldrovandi-[\w-]+\.webp$/,
     /^data\/cards\.json$/,
   ];
   const names = (await filesIn(out)).map((file) => path.relative(out, file).split(path.sep).join('/'));
   const unexpected = names.filter((name) => !ALLOWED.some((pattern) => pattern.test(name)));
-  report('Build : seulement la page, ses scripts, styles et polices, et data/cards.json', unexpected.length === 0 && names.includes('index.html'), unexpected.join(', ') || `${names.length} fichiers`);
+  const dragons = names.filter((name) => name.includes('dragon'));
+  report(
+    'Build : seulement la page, ses scripts, styles et polices, le dragon et data/cards.json',
+    unexpected.length === 0 && names.includes('index.html') && dragons.length === 1,
+    unexpected.join(', ') || `${names.length} fichiers, dont ${dragons.join(', ') || 'aucun dragon'}`,
+  );
 
   const SECRETS = /RANSOMWARE_LIVE_API_KEY|MISTRAL_API_KEY|X-API-KEY|api-pro\.ransomware\.live|state\.db|collector\.log|fixtures\.mjs|PRIVATE KEY/;
   const leaks = [];
   for (const file of await filesIn(out)) {
-    if (file.endsWith('.woff2')) continue;
+    if (/\.(woff2|webp)$/.test(file)) continue;
     const found = SECRETS.exec(await readFile(file, 'utf8'));
     if (found) leaks.push(`${path.relative(out, file)} : ${found[0]}`);
   }
@@ -260,6 +270,33 @@ await build({ root, logLevel: 'error', build: { outDir: out, emptyOutDir: true }
     'CSP du build : script-src \'self\' sans unsafe-inline ni unsafe-eval ; object-src, base-uri, form-action \'none\' ; connect-src \'self\' ; Trusted Types exigés',
     wrong.length === 0,
     wrong.join(' | ') || policy,
+  );
+}
+
+// The dragon itself: a WebP with a transparent background, small, without metadata.
+{
+  const data = await readFile(DRAGON);
+  const chunks = [];
+  for (let at = 12; at + 8 <= data.length; ) {
+    const size = data.readUInt32LE(at + 4);
+    chunks.push(data.toString('latin1', at, at + 4).trim());
+    at += 8 + size + (size % 2);
+  }
+  const extended = data.toString('latin1', 12, 16) === 'VP8X';
+  const width = extended ? 1 + data.readUIntLE(24, 3) : 0;
+  const height = extended ? 1 + data.readUIntLE(27, 3) : 0;
+  report(
+    'Dragon : WebP de 200 Ko au plus, 1600 px de large au plus, fond transparent, sans métadonnées, stocké dans le dépôt',
+    data.toString('latin1', 0, 4) === 'RIFF' &&
+      data.toString('latin1', 8, 12) === 'WEBP' &&
+      extended &&
+      (data[20] & 0x10) !== 0 &&
+      chunks.includes('ALPH') &&
+      width > 0 &&
+      width <= 1600 &&
+      data.length <= 200_000 &&
+      !chunks.some((chunk) => ['EXIF', 'XMP', 'ICCP'].includes(chunk)),
+    `${Math.round(data.length / 1000)} Ko, ${width} × ${height} px, blocs ${chunks.join(' ')}`,
   );
 }
 
@@ -341,6 +378,34 @@ async function openPage({ feed = usual, width = 1440, height = 900, reduce = fal
 const tabTexts = (page) => page.$$eval('.tab', (tabs) => tabs.map((tab) => tab.textContent.replace(/\s+/g, ' ').trim()));
 const digestText = (page) => page.locator('.digest__text').textContent().then(clean);
 const updatedText = (page) => page.locator('.site-header__updated').textContent().then(clean);
+
+/**
+ * The dragon of the digest, drawn by its CSS ::after: shown or not, its size, opacity and image,
+ * and every text or form field of the page that its box would cover (none is allowed).
+ */
+const dragonState = (page) =>
+  page.evaluate(() => {
+    const host = document.querySelector('.digest');
+    const s = host && getComputedStyle(host, '::after');
+    if (!s || s.display === 'none' || s.content === 'none' || s.content === 'normal') return { shown: false, covered: [] };
+    const frame = host.getBoundingClientRect();
+    const right = frame.right - parseFloat(s.right);
+    const top = frame.top + parseFloat(s.top);
+    const box = { left: right - parseFloat(s.width), top, right, bottom: top + parseFloat(s.height) };
+    const boxes = [];
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      if (!node.textContent.trim() || node.parentElement.closest('.sr-only')) continue;
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      for (const rect of range.getClientRects()) boxes.push([node.textContent.trim().slice(0, 24), rect]);
+    }
+    for (const field of document.querySelectorAll('input, select, textarea, button')) boxes.push([field.type || field.tagName, field.getBoundingClientRect()]);
+    const covered = boxes
+      .filter(([, r]) => r.width > 0 && r.height > 0 && r.left < box.right && r.right > box.left && r.top < box.bottom && r.bottom > box.top)
+      .map(([text]) => text);
+    return { shown: true, width: box.right - box.left, height: box.bottom - box.top, opacity: s.opacity, image: s.backgroundImage, covered };
+  });
 const layout = (page) =>
   page.evaluate(() => ({
     une: document.querySelector('.une .une__title')?.textContent ?? null,
@@ -372,6 +437,14 @@ async function styleAudit(page) {
       const isCard = el.classList.contains('card') || el.classList.contains('une');
       if ((isCard && radius !== '6px') || (!isCard && radius !== '0px' && el.type !== 'checkbox')) problems.add(`arrondi ${radius} sur ${el.className || el.tagName}`);
       if (!s.fontFamily.startsWith('"Inria Sans"')) problems.add(`police ${s.fontFamily}`);
+      // Pseudo-elements too: no shadow, no gradient and no image, but the dragon of the digest.
+      for (const pseudo of ['::before', '::after']) {
+        const p = getComputedStyle(el, pseudo);
+        if (p.content === 'none' || p.content === 'normal') continue;
+        const dragon = pseudo === '::after' && el.classList.contains('digest') && /\/assets\/dragon-aldrovandi-[\w-]+\.webp"?\)$/.test(p.backgroundImage);
+        if (p.backgroundImage !== 'none' && !dragon) problems.add(`dégradé ou image sur ${el.className || el.tagName}${pseudo}`);
+        if (p.boxShadow !== 'none') problems.add(`ombre sur ${el.className || el.tagName}${pseudo}`);
+      }
       const ownText = [...el.childNodes].some((node) => node.nodeType === 3 && node.textContent.trim());
       if (ownText && el.getClientRects().length > 0 && !el.closest('.sr-only')) {
         sizes.add(s.fontSize);
@@ -411,6 +484,158 @@ try {
         await shoot(`test-tiroir-${width}-${lang}.png`, { width, height, locale, act: sheet, full: false });
       }
     }
+  }
+
+  // The dragon: a watermark at the right of the daily sentence, from 1024px, at 8 %. Never behind
+  // a text, the same pixels of text with it and without it; hidden on narrow screens and in print;
+  // out of the accessibility tree. Screenshots in French and in English at 1440 and 390px.
+  {
+    const LONG = {
+      fr: 'Depuis hier : 1 attaque critique, 2 graves, 3 significatives et 2 mineures. 4 concernent le grand public, dont 2 qui visent des banques et 1 qui touche une collectivité locale.',
+      en: 'Since yesterday: 1 critical attack, 2 severe, 3 significant and 2 minor. 4 affect the general public, 2 of them aimed at banks and 1 at a local authority.',
+    };
+    const seen = [];
+    for (const [lang, locale] of [
+      ['fr', 'fr-FR'],
+      ['en', 'en-GB'],
+    ]) {
+      for (const width of [1024, 1440, 1920]) {
+        for (const [name, feed] of [
+          ['jour', usual],
+          ['alerte', alertDay],
+          ['sans fiche', emptyFeed],
+        ]) {
+          const { context, page } = await openPage({ feed, width, height: 900, locale, waitFor: feed === emptyFeed ? '.state' : CARDS });
+          seen.push({ name: `${lang} ${width} ${name}`, ...(await dragonState(page)) });
+          if (feed === usual) {
+            // The longest sentence the page could meet: it wraps before reaching the dragon.
+            await page.evaluate((text) => {
+              document.querySelector('.digest__text').textContent = text;
+            }, LONG[lang]);
+            seen.push({ name: `${lang} ${width} phrase longue`, ...(await dragonState(page)) });
+          }
+          await context.close();
+        }
+      }
+    }
+    const wrong = seen.filter((s) => !s.shown || s.covered.length > 0 || s.opacity !== '0.08' || !DRAGON_URL.test(s.image));
+    report(
+      'Dragon : à droite de la phrase du jour, à 8 % d’opacité, jamais derrière un texte (1024, 1440 et 1920 px, français et anglais, phrase longue, sans fiche)',
+      wrong.length === 0,
+      wrong.map((s) => `${s.name} : ${s.shown ? s.covered.join(', ') || s.opacity : 'absent'}`).slice(0, 4).join(' | ') ||
+        `${seen.length} pages, ${Math.round(seen[0].width)} × ${Math.round(seen[0].height)} px`,
+    );
+
+    const narrow = [];
+    for (const locale of ['fr-FR', 'en-GB']) {
+      for (const width of [390, 768]) {
+        const small = await openPage({ width, height: 844, locale });
+        narrow.push((await dragonState(small.page)).shown);
+        await small.context.close();
+      }
+    }
+    const { context, page } = await openPage({ width: 1440, height: 900 });
+    const onScreen = (await dragonState(page)).shown;
+    await page.emulateMedia({ media: 'print' });
+    const inPrint = (await dragonState(page)).shown;
+    await page.emulateMedia({ media: 'screen' });
+    report(
+      'Dragon : caché sur mobile et tablette (390 et 768 px) et à l’impression',
+      onScreen && !inPrint && narrow.every((shown) => !shown),
+      `écran ${onScreen}, impression ${inPrint}, 390 et 768 px ${narrow.join(' ')}`,
+    );
+
+    const tree = await page.locator('.digest').ariaSnapshot();
+    const elements = await page.locator('.digest img, .digest svg, .digest [role="img"]').count();
+    report(
+      'Dragon : décoratif, ignoré des lecteurs d’écran (un fond CSS : ni élément, ni image, ni texte dans l’arbre d’accessibilité)',
+      elements === 0 && !/\bimg\b|image|dragon/i.test(tree),
+      clean(tree),
+    );
+
+    // Contrast: the pixels of every text near the dragon, with it and without it. Each region is
+    // the box of its text itself (a paragraph's box spans the whole width, its text does not).
+    const regions = ['.site-header', '.digest__date', '.digest__text', '.filters'];
+    const textBox = (selector) =>
+      page.evaluate((target) => {
+        const range = document.createRange();
+        range.selectNodeContents(document.querySelector(target));
+        const rect = range.getBoundingClientRect();
+        return { x: rect.left, y: rect.top, width: rect.width, height: rect.height };
+      }, selector);
+    const shots = async () => Promise.all((await Promise.all(regions.map(textBox))).map((clip) => page.screenshot({ clip })));
+    const withDragon = await shots();
+    await page.evaluate(() => {
+      const sheet = new CSSStyleSheet();
+      sheet.replaceSync('.digest::after { display: none !important; }');
+      document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+    });
+    const removed = !(await dragonState(page)).shown;
+    const withoutDragon = await shots();
+    const changed = regions.filter((_, index) => !withDragon[index].equals(withoutDragon[index]));
+    report(
+      'Contraste du texte inchangé : en-tête, date, phrase du jour et onglets identiques au pixel près, avec et sans le dragon',
+      removed && changed.length === 0,
+      changed.join(', ') || `${regions.length} zones comparées`,
+    );
+    await context.close();
+
+    for (const [lang, locale] of [
+      ['fr', 'fr-FR'],
+      ['en', 'en-GB'],
+    ]) {
+      for (const [width, height] of [
+        [1440, 900],
+        [390, 844],
+      ]) {
+        const shot = await openPage({ width, height, locale });
+        await shot.page.waitForTimeout(300);
+        await shot.page.screenshot({ path: path.join(captures, `dragon-${width}-${lang}.png`) });
+        await shot.context.close();
+      }
+    }
+  }
+
+  // The preview image of the repository, for GitHub and LinkedIn: the dragon large, the name and a
+  // short sentence, on the page colour, 1280 × 640 px. In captures/ only (ignored by git).
+  {
+    const font = (weight) => readFile(path.join(root, 'node_modules', '@fontsource', 'inria-sans', 'files', `inria-sans-latin-${weight}-normal.woff2`));
+    const [light, bold, dragon] = (await Promise.all([font(300), font(700), readFile(DRAGON)])).map((data) => data.toString('base64'));
+    const made = [];
+    for (const [lang, sentence] of [
+      ['fr', 'Les cyberattaques du jour, chacune avec ses sources.'],
+      ['en', 'Today’s cyberattacks, each with its sources.'],
+    ]) {
+      const context = await browser.newContext({ viewport: { width: 1280, height: 640 }, deviceScaleFactor: 1 });
+      const page = await context.newPage();
+      await page.setContent(`<!doctype html><html lang="${lang}"><head><meta charset="utf-8"><style>
+        @font-face { font-family: "Inria Sans"; font-weight: 300; src: url(data:font/woff2;base64,${light}) format("woff2"); }
+        @font-face { font-family: "Inria Sans"; font-weight: 700; src: url(data:font/woff2;base64,${bold}) format("woff2"); }
+        html, body { height: 100%; margin: 0; overflow: hidden; background: #f5f5f5; }
+        body { box-sizing: border-box; display: grid; grid-template-columns: 420px minmax(0, 1fr); align-items: center; gap: 24px; padding: 0 48px 0 80px; font-family: "Inria Sans", sans-serif; }
+        h1 { margin: 0; color: #000; font-size: 128px; font-weight: 700; line-height: 1; }
+        p { margin: 24px 0 0; color: #333; font-size: 34px; font-weight: 300; line-height: 1.2; }
+        img { display: block; width: 100%; height: auto; }
+      </style></head><body><div><h1>${APP_NAME}</h1><p>${sentence}</p></div><img alt="" src="data:image/webp;base64,${dragon}"></body></html>`);
+      await page.evaluate(() => document.fonts.ready);
+      await page.waitForFunction(() => document.images[0]?.complete && document.images[0].naturalWidth > 0);
+      const fit = await page.evaluate(() => ({
+        fonts: document.fonts.check('700 128px "Inria Sans"') && document.fonts.check('300 34px "Inria Sans"'),
+        overflow: document.documentElement.scrollWidth > innerWidth || document.documentElement.scrollHeight > innerHeight,
+        dragon: Math.round(document.images[0].getBoundingClientRect().width),
+      }));
+      const png = await page.screenshot({ path: path.join(captures, `apercu-1280x640-${lang}.png`) });
+      await context.close();
+      made.push({
+        ok: png.readUInt32BE(16) === 1280 && png.readUInt32BE(20) === 640 && fit.fonts && !fit.overflow && fit.dragon >= 600,
+        detail: `${lang} : dragon de ${fit.dragon} px, ${Math.round(png.length / 1000)} Ko`,
+      });
+    }
+    report(
+      'Image d’aperçu 1280 × 640 en français et en anglais (captures/apercu-1280x640-*.png) : le dragon en grand, le nom et une phrase courte, sur fond clair',
+      made.every((m) => m.ok),
+      made.map((m) => m.detail).join(' ; '),
+    );
   }
 
   // English: every text of the interface and of the cards in English, nothing left in French.

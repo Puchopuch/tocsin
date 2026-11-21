@@ -30,7 +30,8 @@ First public release.
 - **Duplicates merged**: the same CVE, or the same victim within 7 days, make one card with all its
   sources.
 - **The site** (React, Vite), in French and in English: the cards of the last seven days, a
-  sentence for the day, and for each card its level, its method and its sources.
+  sentence for the day, and for each card its level, its method and its sources. Its emblem, a
+  discreet watermark, is a dragon of Ulisse Aldrovandi (1640, public domain).
 
 ### Security
 
@@ -84,7 +85,8 @@ Première version publique.
 - **Doublons fusionnés** : la même CVE, ou la même victime à 7 jours près, donnent une seule fiche
   avec toutes ses sources.
 - **Le site** (React, Vite), en français et en anglais : les fiches des sept derniers jours, une
-  phrase du jour, et pour chaque fiche son niveau, sa méthode et ses sources.
+  phrase du jour, et pour chaque fiche son niveau, sa méthode et ses sources. Son emblème, en
+  filigrane discret, est un dragon d'Ulisse Aldrovandi (1640, domaine public).
 
 **Sécurité**
 

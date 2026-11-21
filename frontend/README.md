@@ -195,6 +195,17 @@ text `#333333`, secondary text `#666666`. Severity, like a weather warning, only
 square: Mineure `#8A8A8A`, Significative `#F5C400` with a 1px `#8A6D00` outline, Grave
 `#E8590C`, Critique `#C1121F`. No shadow, no gradient; 6px corners on cards, 0 elsewhere.
 
+### The emblem
+
+A dragon of Ulisse Aldrovandi (*Serpentum et draconum historiae libri duo*, 1640, public domain;
+credits in the main README), `src/assets/dragon-aldrovandi.webp`: dark grey lines on a
+transparent background, 1011px wide, 87 KB, stored in the repository. From 1024px wide, it is a
+watermark at 8 % in the empty space at the right of the daily sentence: the CSS background of
+`.digest::after`, so that screen readers never meet it, 96px high, and the sentence always leaves
+it room (`max-width: min(75ch, 100% - 13rem)`), so that it is never behind a text. Hidden on
+narrower screens and in print. It is the only image of the site, the one exception to "no
+gradient, no image".
+
 ### Typography
 
 One family, Inria Sans (300, 400, 700), self-hosted. Headline title 40px (22px on phones,
@@ -212,7 +223,7 @@ The site shows real cards only and says how they are made: "Méthode et sources"
 sources the collector really reads, the severity grid includes the two criteria of phase 1
 ("une faille déjà exploitée dans un logiciel peu répandu", "une alerte du CERT-FR"), and the
 footer says the cards are built by fixed rules, without AI. No request to another domain: fonts
-are self-hosted, and built pages carry a Content-Security-Policy. No link to ransomware sites or
+and the dragon are files of the site, and built pages carry a Content-Security-Policy. No link to ransomware sites or
 stolen data.
 
 Security:
@@ -246,7 +257,12 @@ pages run at a fixed moment, Friday 20 November 2026 at 15:00 in Paris. It cover
   tab comes back;
 - days without a time, shown without a time;
 - the page without file, with an empty file, with an HTML page instead, with a broken file;
-- "Non communiqué", colours, shadows, gradients, corners, font, sizes and weights;
+- "Non communiqué", colours, shadows, gradients and images (pseudo-elements included), corners,
+  font, sizes and weights;
+- the dragon: the file (WebP, 200 KB and 1600px wide at most, transparent, no metadata), one file
+  in the build; at the right of the sentence at 8 %, never behind a text, from 1024 to 1920px in
+  both languages, with a long sentence and without cards; the pixels of the texts around it the
+  same with and without it; hidden at 390 and 768px and in print; out of the accessibility tree;
 - the absence of animations, the panel, keyboard path and reduced motion;
 - links, the Content-Security-Policy, and that no request goes to another domain;
 - security: no HTML or script sink and no read of the address in `src/`; the links of
@@ -268,7 +284,10 @@ It also saves screenshots in `captures/` (ignored by git), at 1440 and 390px wid
 - `test-tiroir-…`: the detail panel open;
 - `vide-…`: no file yet;
 - `reel-…`: the real cards, when `public/data/cards.json` exists;
-- `test-incomplet-1440.png`, `test-incomplet-390.png`: test cards missing information, in French.
+- `test-incomplet-1440.png`, `test-incomplet-390.png`: test cards missing information, in French;
+- `dragon-1440-fr.png`, `dragon-390-en.png`…: the top of the page, with the dragon (none at 390px);
+- `apercu-1280x640-fr.png` and `-en.png`: the preview image of the repository, for GitHub and
+  LinkedIn: the dragon large, the name and a short sentence, on the page colour.
 
 The browser is Playwright's Chromium (once: `npx playwright install chromium`) or an
 installed Chrome or Edge: `CHECK_BROWSER=chrome npm run check`.

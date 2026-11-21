@@ -233,8 +233,10 @@
     text-decoration-line: none;
   }
 
-  /* Date and the sentence counted on the cards. */
+  /* Date and the sentence counted on the cards. On wide screens, the emblem of Tocsin sits in the
+     empty space at the right of the sentence (see "Wider screens"). */
   .digest {
+    position: relative;
     padding-top: 32px;
   }
 
@@ -739,6 +741,32 @@
   @media (width >= 64rem) {
     .grid-cards--3 {
       grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    /* The emblem: a dragon of Ulisse Aldrovandi (1640, public domain; credits in the README), as
+       a watermark at 8 %. A CSS background, so that screen readers never meet it. 96px high, from
+       6px under the header to above the tabs, and the sentence always leaves it room: it is never
+       behind a text. Hidden on narrower screens and in print. */
+    .digest::after {
+      content: "";
+      position: absolute;
+      top: 6px;
+      right: 0;
+      height: 96px;
+      aspect-ratio: 1011 / 545;
+      background: url("./assets/dragon-aldrovandi.webp") no-repeat center / contain;
+      opacity: 0.08;
+      pointer-events: none;
+    }
+
+    .digest__text {
+      max-width: min(75ch, 100% - 13rem);
+    }
+  }
+
+  @media print {
+    .digest::after {
+      display: none;
     }
   }
 

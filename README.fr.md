@@ -355,3 +355,10 @@ ses sources ; aucun article n'est republié. Les textes de l'IA sont écrits par
 [Mistral AI](https://mistral.ai/), avec votre clé. La police est
 [Inria Sans](https://github.com/BlackFoundryCom/InriaFonts) (SIL Open Font License), servie par
 [Fontsource](https://fontsource.org/).
+
+Le dragon, emblème de Tocsin, est une gravure sur bois d'Ulisse Aldrovandi, *Serpentum et
+draconum historiae libri duo* (Bologne, 1640), **domaine public** :
+[Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Dragon_2_Aldrovdani.jpg), numérisée
+par les Smithsonian Libraries pour la Biodiversity Heritage Library. Recadrée, avec un fond
+transparent et des traits gris foncé, elle est stockée dans le dépôt
+(`frontend/src/assets/dragon-aldrovandi.webp`) et jamais chargée depuis un autre site.
