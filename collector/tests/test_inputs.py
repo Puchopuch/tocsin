@@ -155,6 +155,42 @@ def test_a_broken_alert_page_keeps_the_cves_of_the_feed(page):
     assert set(nginx.cves) == {"CVE-2026-123007", "CVE-2026-123633"}
 
 
+def test_cve_links_are_read_by_the_html_parser_whatever_their_spelling():
+    """A link to cve.org is read as a link, by an HTML parser, then as a URL: capitals, line breaks,
+    spaces around "=", single quotes and entities count. A link in a comment, a script, a template
+    or plain text, on another site, with two numbers or in javascript: does not."""
+    page = """<!doctype html><html><body><article>
+    <A HREF="https://www.cve.org/CVERecord?id=CVE-2026-1001">un</A>
+    <a
+      href = 'https://www.cve.org/CVERecord?id=CVE-2026-1002' >deux</a >
+    <a href="https://www.cve.org/CVERecord?id&#61;CVE-2026-1003">trois</a>
+    <a href="https://www.cve.org/CVERecord?id=CVE-2026-1004&amp;utm=x">quatre</a>
+    <a href="HTTPS://WWW.CVE.ORG/CVERecord?id=CVE-2026-1005">cinq</a>
+    <!-- <a href="https://www.cve.org/CVERecord?id=CVE-2026-9001">commentaire</a> -->
+    <script>var lien = '<a href="https://www.cve.org/CVERecord?id=CVE-2026-9002">';</script>
+    <template><a href="https://www.cve.org/CVERecord?id=CVE-2026-9003">modèle</a></template>
+    <p>https://www.cve.org/CVERecord?id=CVE-2026-9004 cité en texte</p>
+    <a href="https://evil.example/www.cve.org/CVERecord?id=CVE-2026-9005">autre site</a>
+    <a href="https://www.cve.org.evil.example/CVERecord?id=CVE-2026-9006">faux domaine</a>
+    <a href="https://www.cve.org/CVERecord?id=CVE-2026-9007&id=CVE-2026-9008">deux numéros</a>
+    <a href="javascript:alert('https://www.cve.org/CVERecord?id=CVE-2026-9009')">piège</a>
+    </article></body></html>"""
+    cves, _, _ = certfr.page_details(page)
+    assert cves == ["CVE-2026-1001", "CVE-2026-1002", "CVE-2026-1003", "CVE-2026-1004", "CVE-2026-1005"]
+
+
+def test_the_lists_of_an_alert_page_are_read_by_the_html_parser_whatever_their_spelling():
+    page = """<H2>Risques</H2><UL><LI>Déni de service</LI ><li
+    >Atteinte à la confidentialité des données</li></UL>
+    <!-- <h2>Risques</h2><ul><li>Faux risque</li></ul> -->
+    <h3>Systèmes affectés</h3><ul><li>Produit X versions antérieures à 2.0</li>
+    <script>document.write('<li>Faux système</li>')</script>
+    <template><li>Autre faux système</li></template></ul>"""
+    _, systems, risks = certfr.page_details(page)
+    assert risks == ["Déni de service", "Atteinte à la confidentialité des données"]
+    assert systems == ["Produit X versions antérieures à 2.0"]
+
+
 def test_broken_claims_are_skipped():
     good = {"victim": "Exemple SAS", "group": "groupe-fictif", "country": "FR", "discovered": "2026-11-18 10:00:00",
             "permalink": "https://www.ransomware.live/id/exemple"}

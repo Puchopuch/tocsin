@@ -240,37 +240,7 @@ await build({ root, logLevel: 'error', build: { outDir: out, emptyOutDir: true }
   }
   report('Build : aucune clé ni nom de clé, aucune trace de .env, state.db, journal ou données de test', leaks.length === 0, leaks.join(' | '));
 
-  const html = await readFile(path.join(out, 'index.html'), 'utf8');
-  const scripts = html.match(/<script\b[^>]*>/g) ?? [];
-  const handlers = html.match(/\son[a-z]+\s*=/gi) ?? [];
-  report('index.html construit : un seul script, chargé depuis le site, aucun script en ligne ni attribut on…=', scripts.length === 1 && /\bsrc="\.\/assets\//.test(scripts[0]) && handlers.length === 0, scripts.join(' '));
-
-  const policy = /<meta http-equiv="Content-Security-Policy" content="([^"]+)"/.exec(html)?.[1] ?? '';
-  const directives = Object.fromEntries(
-    policy
-      .split(';')
-      .map((part) => part.trim().split(/\s+/))
-      .filter((words) => words[0])
-      .map(([name, ...values]) => [name, values.join(' ')]),
-  );
-  const EXPECTED = {
-    'default-src': "'self'",
-    'script-src': "'self'",
-    'connect-src': "'self'",
-    'object-src': "'none'",
-    'base-uri': "'none'",
-    'form-action': "'none'",
-    'require-trusted-types-for': "'script'",
-    'trusted-types': "'none'",
-  };
-  const wrong = Object.entries(EXPECTED)
-    .filter(([name, value]) => directives[name] !== value)
-    .map(([name]) => `${name} = ${directives[name] ?? 'absente'}`);
-  report(
-    'CSP du build : script-src \'self\' sans unsafe-inline ni unsafe-eval ; object-src, base-uri, form-action \'none\' ; connect-src \'self\' ; Trusted Types exigés',
-    wrong.length === 0,
-    wrong.join(' | ') || policy,
-  );
+  // index.html itself is read further down, by the HTML parser of the browser.
 }
 
 // The dragon itself: a WebP with a transparent background, small, without metadata.
@@ -318,6 +288,159 @@ const dialogs = [];
     'Serveurs de développement et de prévisualisation : 127.0.0.1 seulement',
     devAddress.address === '127.0.0.1' && previewAddress.address === '127.0.0.1',
     `${devAddress.address}:${devAddress.port} ; ${previewAddress.address}:${previewAddress.port}`,
+  );
+}
+
+// ---------------------------------------------------------------------------------------------
+// The built page, as the browser reads it
+
+/**
+ * What the browser itself finds in an HTML text: its scripts, its event-handler attributes, its
+ * javascript: links and its Content-Security-Policy. Read by the HTML parser of the browser
+ * (DOMParser), never by a regular expression, so that no spelling slips by: capitals,
+ * `</script >`, a line break, `<script/x>`, a comment, a <template>. DOMParser runs none of the
+ * scripts it reads, and it works in a blank page, which has no CSP.
+ */
+let parserPage = null;
+async function readHtml(text) {
+  parserPage ??= await browser.newPage();
+  return parserPage.evaluate((html) => {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    // The document and the content of every <template>, nested ones included.
+    const roots = [doc];
+    for (let index = 0; index < roots.length; index += 1) {
+      for (const template of roots[index].querySelectorAll('template')) roots.push(template.content);
+    }
+    const elements = roots.flatMap((root) => [...root.querySelectorAll('*')]);
+    const scripts = elements.filter((element) => element.localName === 'script');
+    const policies = elements.filter(
+      (element) => element.localName === 'meta' && (element.getAttribute('http-equiv') ?? '').trim().toLowerCase() === 'content-security-policy',
+    );
+    // A link is read as the browser reads it: entities decoded, tabs and line breaks dropped. A link
+    // that could run code is refused: javascript:, vbscript:, and data: anywhere but as an image
+    // (<img>, or the icon of the tab, which is one).
+    const runsCode = (element, value) => {
+      let url;
+      try {
+        url = new URL(value, 'https://page.invalid/');
+      } catch {
+        return false;
+      }
+      if (url.protocol === 'javascript:' || url.protocol === 'vbscript:') return true;
+      if (url.protocol === 'data:') {
+        const rel = (element.getAttribute('rel') ?? '').toLowerCase().split(/\s+/);
+        const image = element.localName === 'img' || (element.localName === 'link' && rel.includes('icon'));
+        return !(image && url.pathname.toLowerCase().startsWith('image/'));
+      }
+      return false;
+    };
+    const LINKS = ['href', 'src', 'action', 'formaction', 'xlink:href', 'data'];
+    return {
+      scripts: scripts.map((script) => ({ src: script.getAttribute('src'), text: script.textContent.trim().length })),
+      handlers: elements.flatMap((element) =>
+        [...element.attributes].filter((attribute) => attribute.name.startsWith('on')).map((attribute) => `${element.localName}[${attribute.name}]`),
+      ),
+      codeLinks: elements.flatMap((element) =>
+        [...element.attributes]
+          .filter((attribute) => LINKS.includes(attribute.name) && runsCode(element, attribute.value))
+          .map((attribute) => `${element.localName}[${attribute.name}]`),
+      ),
+      policies: policies.map((meta) => meta.getAttribute('content') ?? ''),
+      policyFirst: policies.length > 0 && scripts.every((script) => (policies[0].compareDocumentPosition(script) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0),
+    };
+  }, text);
+}
+
+/** What the built page must be: one script, from the site, nothing inline, one CSP before it. */
+function judgePage(facts) {
+  const wrong = [];
+  if (facts.scripts.length !== 1) wrong.push(`${facts.scripts.length} scripts`);
+  for (const script of facts.scripts) {
+    if (script.src === null) wrong.push('script en ligne');
+    else if (!/^\.\/assets\/[\w-]+\.js$/.test(script.src)) wrong.push(`script venu d’ailleurs (${script.src})`);
+    if (script.text > 0) wrong.push('texte dans une balise script');
+  }
+  if (facts.handlers.length > 0) wrong.push(`attributs ${facts.handlers.join(', ')}`);
+  if (facts.codeLinks.length > 0) wrong.push(`liens qui exécutent du code ${facts.codeLinks.join(', ')}`);
+  if (facts.policies.length !== 1) wrong.push(`${facts.policies.length} CSP`);
+  else if (!facts.policyFirst) wrong.push('CSP placée après un script');
+  return wrong;
+}
+
+{
+  const facts = await readHtml(await readFile(path.join(out, 'index.html'), 'utf8'));
+  const problems = judgePage(facts);
+  report(
+    'index.html construit, lu par le parseur HTML du navigateur : un seul script, chargé depuis le site ; ni script en ligne, ni attribut on…, ni lien javascript:, vbscript: ou data: (hors image) ; une seule CSP, placée avant le script',
+    problems.length === 0,
+    problems.join(' | ') || facts.scripts.map((script) => script.src).join(' '),
+  );
+
+  const policy = facts.policies[0] ?? '';
+  const directives = Object.fromEntries(
+    policy
+      .split(';')
+      .map((part) => part.trim().split(/\s+/))
+      .filter((words) => words[0])
+      .map(([name, ...values]) => [name, values.join(' ')]),
+  );
+  const EXPECTED = {
+    'default-src': "'self'",
+    'script-src': "'self'",
+    'connect-src': "'self'",
+    'object-src': "'none'",
+    'base-uri': "'none'",
+    'form-action': "'none'",
+    'require-trusted-types-for': "'script'",
+    'trusted-types': "'none'",
+  };
+  const wrong = Object.entries(EXPECTED)
+    .filter(([name, value]) => directives[name] !== value)
+    .map(([name]) => `${name} = ${directives[name] ?? 'absente'}`);
+  report(
+    'CSP du build : script-src \'self\' sans unsafe-inline ni unsafe-eval ; object-src, base-uri, form-action \'none\' ; connect-src \'self\' ; Trusted Types exigés',
+    wrong.length === 0,
+    wrong.join(' | ') || policy,
+  );
+}
+
+// The same check, tried on pages it must refuse: the spellings a regular expression could miss.
+// Each one must be caught, and a correct page must pass, even written in capitals.
+{
+  const csp = '<meta http-equiv="Content-Security-Policy" content="default-src \'self\'">';
+  const bundle = '<script type="module" crossorigin src="./assets/index-Abc123.js"></script>';
+  const page = (head, body = '') => `<!doctype html><html lang="fr"><head><meta charset="UTF-8">${head}</head><body><div id="root"></div>${body}</body></html>`;
+  const GOOD = {
+    'page correcte': page(csp + bundle),
+    'page correcte en capitales': page('<META HTTP-EQUIV="Content-Security-Policy" CONTENT="default-src \'self\'"><SCRIPT TYPE="module" SRC="./assets/index-Abc123.js"></SCRIPT>'),
+    'page correcte avec une icône en data:': page(`<link rel="icon" href="data:image/svg+xml,%3Csvg%3E%3C/svg%3E">${csp}${bundle}`),
+  };
+  const TRAPS = {
+    '<SCRIPT> en capitales': page(csp + bundle, '<SCRIPT>alert(1)</SCRIPT>'),
+    '<ScRiPt> en casse mêlée': page(csp + bundle, '<ScRiPt>alert(1)</sCrIpT>'),
+    '</script > avec une espace': page(csp + bundle, '<script >alert(1)</script >'),
+    'retour à la ligne dans la balise': page(csp + bundle, '<script\n>alert(1)</script\n>'),
+    '<script/x>': page(csp + bundle, '<script/x>alert(1)</script>'),
+    'vrai script en commentaire, faux script après': page(`${csp}<!-- ${bundle} --><script>alert(1)</script>`),
+    'script dans un <template>': page(csp + bundle, '<template><script>alert(1)</script></template>'),
+    'script venu d’un autre site': page(`${csp}<script src="https://evil.example/x.js"></script>`),
+    'ONERROR en capitales': page(csp + bundle, '<IMG SRC=x ONERROR=alert(1)>'),
+    '<svg/onload>': page(csp + bundle, '<svg/onload=alert(1)>'),
+    'lien javascript: coupé par une tabulation': page(csp + bundle, '<a href="jav&#x09;ascript:alert(1)">x</a>'),
+    'lien vbscript:': page(csp + bundle, '<a href="VBScript:msgbox(1)">x</a>'),
+    'cadre en data:text/html': page(csp + bundle, '<iframe src="data:text/html,<script>alert(1)</script>"></iframe>'),
+    'CSP placée après le script': page(bundle + csp),
+    'aucune CSP': page(bundle),
+    'deux CSP': page(csp + csp + bundle),
+  };
+  const missed = [];
+  for (const [name, html] of Object.entries(TRAPS)) if (judgePage(await readHtml(html)).length === 0) missed.push(name);
+  const refused = [];
+  for (const [name, html] of Object.entries(GOOD)) if (judgePage(await readHtml(html)).length > 0) refused.push(name);
+  report(
+    `Vérification de index.html essayée sur ${Object.keys(TRAPS).length} pages piégées (capitales, </script >, retour à la ligne, <script/x>, commentaire, <template>, autre site, ONERROR, <svg/onload>, javascript: coupé, vbscript:, cadre en data:, CSP absente, double ou après le script) : toutes attrapées ; la page correcte passe, même en capitales ou avec une icône en data:`,
+    missed.length === 0 && refused.length === 0,
+    [...missed.map((name) => `non attrapée : ${name}`), ...refused.map((name) => `refusée à tort : ${name}`)].join(' | '),
   );
 }
 
@@ -1059,7 +1182,7 @@ try {
     const { context, page, errors } = await openPage({ feed });
     await page.screenshot({ path: path.join(captures, 'test-incomplet-1440.png'), fullPage: true });
     const text = await page.evaluate(() => document.body.innerText);
-    const csp = await page.evaluate(() => document.querySelector('meta[http-equiv="Content-Security-Policy"]')?.content ?? '');
+    const csp = await page.evaluate(() => document.querySelector('meta[http-equiv="content-security-policy" i]')?.content ?? '');
     const articles = await page.locator(CARDS).count();
     await page.locator('#lire-test-telecomx').click();
     await page.waitForSelector('[role="dialog"]');

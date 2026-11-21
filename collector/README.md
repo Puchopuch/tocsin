@@ -89,7 +89,10 @@ writes plain spaces; the site adds French typography to French texts only.
   decompressed, gzip only, decompressed piece by piece.
 - **Inputs**: defusedxml without DTD; broken JSON, XML or HTML, deep nesting, huge texts, NUL bytes
   and invalid Unicode skip the entry, counted; control, invisible and bidi characters removed,
-  Unicode normalised (NFC).
+  Unicode normalised (NFC). HTML is read by the parser of the standard library (`html.parser`),
+  never by a regular expression: the text of articles, the lists and the cve.org links of CERT-FR
+  pages (a link in a comment, a script or plain text is not a link; capitals, line breaks and
+  entities change nothing).
 - **Links**: https and an ordinary host name only: never `javascript:`, `data:`, `vbscript:`,
   `file:`, `//`, credentials, a port, `.onion` or `xn--`, an IP address, a space, a quote or an
   angle bracket, whatever the case or the encoding (`tests/data/links.json`, checked by the site
@@ -112,7 +115,7 @@ writes plain spaces; the site adds French typography to French texts only.
 | `test_cards.py` | phase 1 cards, in both languages |
 | `test_sources.py`, `test_fetcher.py`, `test_cli.py`, `test_output.py` | sources, HTTP layer, command line, cards.json |
 | `test_network.py` | sites, addresses, redirects, TLS, time and size limits, compression bombs |
-| `test_inputs.py` | XXE, billion laughs, broken inputs, hidden characters, links, SQL |
+| `test_inputs.py` | XXE, billion laughs, broken inputs, HTML in every spelling, hidden characters, links, SQL |
 | `test_secrets_resilience.py` | keys, interrupted writes, sources down, state.db deleted or damaged |
 | `test_phase2.py`, `test_phase2_cli.py` | the press and the AI, simulated: traps, quotes, budget, cache, keys |
 

@@ -3,7 +3,9 @@ feed and, when robots.txt allows it, in each alert page: its cve.org links (the 
 descriptions, so it may miss some) and its lists "Systèmes affectés" and "Risques".
 
 The feed is read with defusedxml and no DTD at all: no entity, no external file, so neither an
-XXE nor a "billion laughs" can go through. A broken item is skipped and counted."""
+XXE nor a "billion laughs" can go through. A broken item is skipped and counted. The alert page is
+read by an HTML parser, never by a regular expression: a link in a comment, a script or plain text
+is not a link, and capitals, line breaks or entities change nothing."""
 
 from __future__ import annotations
 
@@ -12,7 +14,7 @@ import re
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from html.parser import HTMLParser
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 from urllib.robotparser import RobotFileParser
 
 from defusedxml import DefusedXmlException
@@ -26,12 +28,27 @@ from . import Fetcher, SourceError, window_start
 NAME = "CERT-FR, alertes"
 NUMBER = re.compile(r"CERTFR-\d{4}-ALE-\d{3,}")
 CVE = re.compile(r"CVE-\d{4}-\d{4,7}")
-CVE_LINK = re.compile(r"cve\.org/CVERecord\?id=(CVE-\d{4}-\d{4,7})")
+CVE_HOSTS = ("www.cve.org", "cve.org")
 log = logging.getLogger(__name__)
 
 
 def unique(values: list[str]) -> list[str]:
     return list(dict.fromkeys(values))
+
+
+def cve_of_link(href: str) -> str | None:
+    """The CVE number of a link to its record on cve.org, read as a URL: scheme, host, path, and a
+    single "id" in the query. Anything else is not such a link."""
+    try:
+        parts = urlsplit(href.strip())
+        host = parts.hostname
+        query = parse_qs(parts.query, max_num_fields=20)
+    except ValueError:
+        return None
+    if parts.scheme not in ("https", "http") or host not in CVE_HOSTS or parts.path != "/CVERecord":
+        return None
+    ids = query.get("id", [])
+    return ids[0] if len(ids) == 1 and CVE.fullmatch(ids[0]) else None
 
 
 def parse(body: bytes) -> list[CertfrAlert]:
@@ -99,16 +116,20 @@ class Robots:
         return rules is not None and rules.can_fetch(config.USER_AGENT, url)
 
 
-class Lists(HTMLParser):
-    """The items of the lists under the headings "Risque(s)" and "Systèmes affectés" of an alert
-    page. Only the text of the items is kept: no attribute, no comment, no script."""
+class AlertPage(HTMLParser):
+    """What an alert page holds for the collector, read by an HTML parser: the CVE numbers of its
+    links to cve.org (`<a href>` only), and the items of the lists under the headings "Risque(s)"
+    and "Systèmes affectés" (their text only). Nothing in a comment, a script, a style or a
+    template counts. The parser lowercases tags and attributes and decodes entities."""
 
     SECTIONS = {"risque": "risks", "risques": "risks", "systemes affectes": "systems"}
     MAX_ITEMS = 30
+    MAX_CVES = 100
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self.found: dict[str, list[str]] = {"risks": [], "systems": []}
+        self.cves: list[str] = []
         self._heading: list[str] | None = None
         self._section: str | None = None
         self._item: list[str] | None = None
@@ -117,6 +138,11 @@ class Lists(HTMLParser):
     def handle_starttag(self, tag, attrs):
         if tag in ("script", "style", "template"):
             self._skip += 1
+        elif tag == "a" and not self._skip and len(self.cves) < self.MAX_CVES:
+            for name, value in attrs:
+                cve = cve_of_link(value) if name == "href" and value else None
+                if cve:
+                    self.cves.append(cve)
         elif tag in ("h1", "h2", "h3", "h4"):
             self._heading, self._section = [], None
         elif tag == "li" and self._section and self._item is None:
@@ -144,16 +170,16 @@ class Lists(HTMLParser):
 
 
 def page_details(page: str) -> tuple[list[str], list[str], list[str]]:
-    """The CVE numbers linked to cve.org, and the lists "Systèmes affectés" and "Risques" of an
-    alert page. A broken item is skipped; a broken page gives empty lists."""
-    lists = Lists()
+    """The CVE numbers of the links to cve.org, and the lists "Systèmes affectés" and "Risques" of
+    an alert page. A broken item is skipped; a broken page gives what was read before the break."""
+    parsed = AlertPage()
     try:
-        lists.feed(page)
-        lists.close()
+        parsed.feed(page)
+        parsed.close()
     except (AssertionError, ValueError, RecursionError):
         pass
     kept = {}
-    for key, items in lists.found.items():
+    for key, items in parsed.found.items():
         kept[key] = []
         for item in items:
             try:
@@ -162,7 +188,7 @@ def page_details(page: str) -> tuple[list[str], list[str], list[str]]:
                 continue
             if value:
                 kept[key].append(value)
-    return CVE_LINK.findall(page), unique(kept["systems"]), unique(kept["risks"])
+    return unique(parsed.cves), unique(kept["systems"]), unique(kept["risks"])
 
 
 def with_page_details(fetcher: Fetcher, alerts: list[CertfrAlert]) -> list[CertfrAlert]:
