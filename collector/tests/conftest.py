@@ -10,13 +10,16 @@ from collector import config
 
 @pytest.fixture(autouse=True)
 def no_network(monkeypatch):
-    """B12: the tests never reach the network."""
+    """B12: the tests never reach the network, nor ask a DNS server anything. Any attempt fails at
+    once, instead of waiting for an answer."""
 
     def refuse(*args, **kwargs):
         raise RuntimeError("network access is forbidden in tests")
 
-    monkeypatch.setattr(socket.socket, "connect", refuse)
-    monkeypatch.setattr(socket, "create_connection", refuse)
+    for name in ("connect", "connect_ex", "sendto"):
+        monkeypatch.setattr(socket.socket, name, refuse)
+    for name in ("create_connection", "getaddrinfo", "gethostbyname", "gethostbyname_ex", "gethostbyaddr", "getnameinfo"):
+        monkeypatch.setattr(socket, name, refuse)
 
 
 @pytest.fixture(autouse=True)

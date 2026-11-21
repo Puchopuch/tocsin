@@ -5,13 +5,32 @@
 
 # Briefs: these PDFs hold local paths, never committed.
 docs/*.pdf
+*.pdf
 
-# Python
+# Python: compiled files and caches hold the full paths of the machine that made them.
 .venv/
 __pycache__/
-*.pyc
+*.py[cod]
 .pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+junit*.xml
+
+# Playwright: reports and traces hold full paths and screenshots.
+test-results/
+playwright-report/
+*.trace.zip
+trace.zip
 
 # Collector: state and local journal. They hold real names: never committed.
 collector/state.db*
 collector/logs/
+*.log
+
+# Editors and coding agents: local settings, never shared.
+.vscode/
+.idea/
+.claude/
+CLAUDE.md

@@ -1,0 +1,10 @@
+# gitleaks settings of this repository: every default rule, plus a single allowance.
+title = "Tocsin"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "The fake key of the tests (collector/tests/helpers.py): invented, it opens nothing."
+regexTarget = "match"
+regexes = ['''cle-de-test-0123456789abcdef''']

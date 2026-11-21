@@ -46,6 +46,21 @@ def serving(answer) -> tuple[Fetcher, list[httpx.Request]]:
     return Fetcher(transport=httpx.MockTransport(handler), sleep=lambda seconds: None), seen
 
 
+# The tests themselves -------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("attempt", [
+    lambda: socket.getaddrinfo("www.cisa.gov", 443),
+    lambda: socket.gethostbyname("www.cisa.gov"),
+    lambda: socket.create_connection(("www.cisa.gov", 443)),
+    lambda: httpx.get("https://www.cisa.gov/", timeout=1),
+], ids=["dns", "dns-v4", "connection", "httpx"])
+def test_no_test_can_wait_for_the_network_or_a_dns_server(attempt):
+    """conftest.py makes every lookup and connection fail at once."""
+    with pytest.raises((RuntimeError, httpx.HTTPError)):
+        attempt()
+
+
 # https, listed sites ----------------------------------------------------------------------------
 
 
