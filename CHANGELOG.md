@@ -3,6 +3,25 @@
 The changes of Tocsin, newest first. Versions follow [Semantic Versioning](https://semver.org/).
 *En français : plus bas, sous chaque version.*
 
+## Unreleased
+
+### Security
+
+- The checks of the site read the built `index.html` with the HTML parser of the browser instead
+  of regular expressions (CodeQL alert "Bad HTML filtering regexp"); the check is tried on 14
+  trapped pages (capitals, `</script >`, `<script/x>`, comments, templates...) and catches them all.
+- The collector reads the cve.org links of CERT-FR pages with an HTML parser: a link in a comment,
+  a script or plain text no longer counts, and capitals or entities no longer hide one.
+
+### En français
+
+- Les vérifications du site lisent le `index.html` construit avec le parseur HTML du navigateur,
+  et non plus avec des expressions régulières (alerte CodeQL « Bad HTML filtering regexp ») ; la
+  vérification est essayée sur 14 pages piégées et les attrape toutes.
+- Le collecteur lit les liens cve.org des pages du CERT-FR avec un parseur HTML : un lien en
+  commentaire, dans un script ou en simple texte ne compte plus, et ni les capitales ni les entités
+  ne cachent plus un vrai lien.
+
 ## [1.0.0](https://github.com/Puchopuch/tocsin/releases/tag/v1.0.0) (2026-11-21)
 
 First public release.

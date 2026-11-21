@@ -268,7 +268,11 @@ pages run at a fixed moment, Friday 20 November 2026 at 15:00 in Paris. It cover
 - security: no HTML or script sink and no read of the address in `src/`; the links of
   `collector/tests/data/links.json`, refused or kept as by the collector; the files of the build
   (a list of allowed names, no key, no trace of `.env`, `state.db` or test data); `index.html`
-  without inline script; the CSP, directive by directive, and a control that it really blocks
+  read by the HTML parser of the browser, never by a regular expression: one script, from the
+  site, no inline script, `on…` attribute or `javascript:` link, one CSP placed before the script;
+  that check tried on 14 trapped pages (capitals, `</script >`, a line break, `<script/x>`, a
+  comment, a `<template>`, `<svg/onload>`…), each caught; the CSP, directive by directive, and a
+  control that it really blocks
   `innerHTML`, `eval`, `new Function` and inline scripts; `<script>`, `<img onerror>`,
   `<svg onload>` and `javascript:` in every field of the cards and in the search, in both
   languages (no dialog, no element created, the text shown as it is); links in `_blank` with

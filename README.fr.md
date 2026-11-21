@@ -287,9 +287,10 @@ de site, aucune clé, rien sur vous ni sur votre ordinateur.
   adresses publiques seulement (vérifiées après le DNS, à chaque redirection et sur la connexion
   elle-même), TLS toujours vérifié, 3 redirections au plus, 20 s par opération réseau et 60 s par
   requête, 20 Mo au plus une fois décompressé (une bombe de compression s'arrête à la limite).
-- **Entrées** : XML lu avec defusedxml et sans DTD (ni XXE, ni « billion laughs ») ; entrées
-  cassées écartées et comptées ; caractères de contrôle, invisibles et bidirectionnels retirés ;
-  chaque requête SQLite avec des paramètres.
+- **Entrées** : XML lu avec defusedxml et sans DTD (ni XXE, ni « billion laughs ») ; HTML lu par
+  un parseur, jamais par des expressions régulières, dans le collecteur comme dans les
+  vérifications du site ; entrées cassées écartées et comptées ; caractères de contrôle,
+  invisibles et bidirectionnels retirés ; chaque requête SQLite avec des paramètres.
 - **Clés** : gardées comme valeurs secrètes, envoyées à leur propre API seulement, jamais à travers
   une redirection, jamais journalisées ni mises en cache.
 - **Site** : une Content-Security-Policy sans script en ligne ni eval, Trusted Types exigés, liens

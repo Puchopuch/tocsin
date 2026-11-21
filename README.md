@@ -272,9 +272,10 @@ key, nothing about you or your computer.
   (checked after DNS, at each redirect, and on the connection itself), TLS always verified, 3
   redirects at most, 20 s per network operation and 60 s per request, 20 MB at most once
   decompressed (a compression bomb stops at the limit).
-- **Inputs**: XML read with defusedxml and no DTD (no XXE, no billion laughs); broken entries
-  skipped and counted; control, invisible and bidi characters removed; every SQLite query has
-  placeholders.
+- **Inputs**: XML read with defusedxml and no DTD (no XXE, no billion laughs); HTML read by a
+  parser, never by regular expressions, in the collector as in the checks of the site; broken
+  entries skipped and counted; control, invisible and bidi characters removed; every SQLite query
+  has placeholders.
 - **Keys**: held as secret values, sent to their own API only, never through a redirect, never
   logged or cached.
 - **Site**: a Content-Security-Policy without inline script or eval, Trusted Types required, links
