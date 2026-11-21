@@ -1,6 +1,10 @@
-# Updates proposed as pull requests, checked by the CI like any other change. A new version waits
-# 14 days before it is proposed (cooldown), so that a compromised release has time to be found;
-# security updates do not wait.
+# Updates proposed as pull requests, checked by the CI like any other change.
+# - Each week, one pull request for all the pip updates and one for all the npm updates, so that
+#   versions that go together move together (pydantic and pydantic-core, tailwindcss and
+#   @tailwindcss/vite): every pin is exact, and the CI checks them with pip check.
+# - A new version waits 14 days before it is proposed (cooldown), so that a compromised release
+#   has time to be found. Security updates do not wait and are not grouped: the groups and the
+#   cooldown apply to version updates only.
 version: 2
 updates:
   - package-ecosystem: pip
@@ -9,6 +13,10 @@ updates:
       interval: weekly
     cooldown:
       default-days: 14
+    groups:
+      pip:
+        patterns:
+          - "*"
     open-pull-requests-limit: 5
 
   - package-ecosystem: npm
@@ -17,6 +25,10 @@ updates:
       interval: weekly
     cooldown:
       default-days: 14
+    groups:
+      npm:
+        patterns:
+          - "*"
     open-pull-requests-limit: 5
 
   - package-ecosystem: github-actions

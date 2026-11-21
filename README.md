@@ -283,8 +283,9 @@ key, nothing about you or your computer.
   `test_phase2.py`, and the security checks of `npm run check`.
 - **On every push** (GitHub Actions, `.github/workflows/ci.yml`), without any key or secret and
   with read-only rights: pytest, `npm run check`, gitleaks on the whole history, pip-audit,
-  `npm audit` and Bandit. The actions are pinned by commit; Dependabot proposes the updates of
-  pip, npm and the actions once they are 14 days old, security fixes at once.
+  `npm audit` and Bandit. The actions are pinned by commit. Each week, Dependabot proposes one
+  pull request for all the pip updates, one for all the npm updates, and the updates of the
+  actions, once the versions are 14 days old; security fixes at once.
 
 To report a security problem, see [SECURITY.md](SECURITY.md): privately, never in a public issue.
 
