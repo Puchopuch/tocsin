@@ -2,7 +2,7 @@
 # No feedparser, trafilatura, rapidfuzz or Mistral SDK: collector/README.md, "Libraries", says why.
 defusedxml==0.7.1
 httpx==0.28.1
-pydantic==2.14.2
+pydantic==2.14.3
 python-dotenv==1.2.4
 
 # Required by the libraries above, pinned too.
