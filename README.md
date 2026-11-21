@@ -31,8 +31,8 @@ You need [Git](https://git-scm.com/), [Python 3.12 or newer](https://www.python.
 **Windows (PowerShell)**
 
 ```powershell
-git clone https://github.com/Puchopuch/veille-cyber.git
-cd veille-cyber
+git clone https://github.com/Puchopuch/tocsin.git
+cd tocsin
 py -3.12 -m venv .venv
 .venv\Scripts\python -m pip install -r requirements-dev.txt
 .venv\Scripts\python -m collector run
@@ -44,8 +44,8 @@ npm run dev
 **Linux and macOS**
 
 ```sh
-git clone https://github.com/Puchopuch/veille-cyber.git
-cd veille-cyber
+git clone https://github.com/Puchopuch/tocsin.git
+cd tocsin
 python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements-dev.txt
 .venv/bin/python -m collector run
@@ -176,7 +176,7 @@ The task runs while you are signed in. The Task Scheduler shows the result of th
 **Linux and macOS**: `crontab -e`, then this line, with the path of your clone:
 
 ```
-0 7,13,19 * * * cd "$HOME/veille-cyber" && mkdir -p collector/logs && .venv/bin/python -m collector run >> collector/logs/runs.log 2>&1
+0 7,13,19 * * * cd "$HOME/tocsin" && mkdir -p collector/logs && .venv/bin/python -m collector run >> collector/logs/runs.log 2>&1
 ```
 
 On macOS, cron cannot open the Desktop, Documents or Downloads folders without "Full Disk Access":

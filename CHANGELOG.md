@@ -3,7 +3,7 @@
 The changes of Tocsin, newest first. Versions follow [Semantic Versioning](https://semver.org/).
 *En français : plus bas, sous chaque version.*
 
-## 1.0.0 (2026-11-21)
+## [1.0.0](https://github.com/Puchopuch/tocsin/releases/tag/v1.0.0) (2026-11-21)
 
 First public release.
 

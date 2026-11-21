@@ -33,8 +33,8 @@ et [Node.js 20.19 ou plus récent](https://nodejs.org/).
 **Windows (PowerShell)**
 
 ```powershell
-git clone https://github.com/Puchopuch/veille-cyber.git
-cd veille-cyber
+git clone https://github.com/Puchopuch/tocsin.git
+cd tocsin
 py -3.12 -m venv .venv
 .venv\Scripts\python -m pip install -r requirements-dev.txt
 .venv\Scripts\python -m collector run
@@ -46,8 +46,8 @@ npm run dev
 **Linux et macOS**
 
 ```sh
-git clone https://github.com/Puchopuch/veille-cyber.git
-cd veille-cyber
+git clone https://github.com/Puchopuch/tocsin.git
+cd tocsin
 python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements-dev.txt
 .venv/bin/python -m collector run
@@ -183,7 +183,7 @@ dernière exécution (0 : réussie, 1 : une source a échoué). Pour la retirer 
 **Linux et macOS** : `crontab -e`, puis cette ligne, avec le chemin de votre clone :
 
 ```
-0 7,13,19 * * * cd "$HOME/veille-cyber" && mkdir -p collector/logs && .venv/bin/python -m collector run >> collector/logs/runs.log 2>&1
+0 7,13,19 * * * cd "$HOME/tocsin" && mkdir -p collector/logs && .venv/bin/python -m collector run >> collector/logs/runs.log 2>&1
 ```
 
 Sous macOS, cron ne peut pas ouvrir le Bureau, les Documents ni les Téléchargements sans « Accès

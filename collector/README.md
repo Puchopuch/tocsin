@@ -33,9 +33,9 @@ collector/
 
 ## Choices
 
-- **User-Agent** `Tocsin-collecteur/1.0.0 (+https://github.com/Puchopuch/veille-cyber)`
-  (`VERSION` in `config.py`); timeout 20 s per network operation, 60 s per request; one request
-  per second per site; `ETag` and `Last-Modified` kept in `state.db`.
+- **User-Agent** `Tocsin-collecteur/1.0.0 (+https://github.com/Puchopuch/tocsin)` (`VERSION`
+  in `config.py`); timeout 20 s per network operation, 60 s per request; one request per second
+  per site; `ETag` and `Last-Modified` kept in `state.db`.
 - **Widespread software**: Microsoft, Apple, Google, Mozilla, Cisco, Fortinet, Ivanti, Citrix,
   VMware, Palo Alto Networks, Oracle, Adobe, SAP, Atlassian, SonicWall, Juniper, F5, Linux, plus
   Check Point, Synology and QNAP; VMware is now filed by the CISA under Broadcom; of Apache, only

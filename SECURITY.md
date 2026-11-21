@@ -4,9 +4,11 @@
 
 ## Report a vulnerability
 
-Report it **privately**, through GitHub: on the repository, open the **Security** tab, then
-**Report a vulnerability**. Never in a public issue, a pull request or a discussion. There is no
-e-mail address for this: a private report reaches the maintainer only.
+Report it **privately**, through GitHub:
+[Report a vulnerability](https://github.com/Puchopuch/tocsin/security/advisories/new) (the
+**Security** tab of the repository, then **Report a vulnerability**). Never in a public issue, a
+pull request or a discussion. There is no e-mail address for this: a private report reaches the
+maintainer only.
 
 Please say:
 
@@ -66,9 +68,11 @@ and ransomware.live, are tested with simulated answers only.
 
 ## Signaler une faille
 
-Signalez-la **en privé**, par GitHub : sur le dépôt, ouvrez l'onglet **Security**, puis **Report a
-vulnerability**. Jamais dans une issue publique, une pull request ou une discussion. Il n'y a pas
-d'adresse e-mail pour cela : un signalement privé n'arrive qu'au mainteneur.
+Signalez-la **en privé**, par GitHub :
+[Report a vulnerability](https://github.com/Puchopuch/tocsin/security/advisories/new) (l'onglet
+**Security** du dépôt, puis **Report a vulnerability**). Jamais dans une issue publique, une pull
+request ou une discussion. Il n'y a pas d'adresse e-mail pour cela : un signalement privé n'arrive
+qu'au mainteneur.
 
 Indiquez :
 

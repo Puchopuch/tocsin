@@ -1,5 +1,5 @@
 {
-  "name": "veille-cyber-frontend",
+  "name": "tocsin-frontend",
   "private": true,
   "version": "1.0.0",
   "description": "Tocsin: the cyberattacks of the day for the general public and small businesses, read from the cards written by the collector (static frontend).",

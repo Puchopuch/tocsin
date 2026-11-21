@@ -11,7 +11,7 @@ ENV_PATH = ROOT / ".env"
 
 # Politeness (B4): the User-Agent names the project, its version and where to read about it.
 VERSION = "1.0.0"
-USER_AGENT = f"Tocsin-collecteur/{VERSION} (+https://github.com/Puchopuch/veille-cyber)"
+USER_AGENT = f"Tocsin-collecteur/{VERSION} (+https://github.com/Puchopuch/tocsin)"
 TIMEOUT_SECONDS = 20.0
 SECONDS_BETWEEN_REQUESTS = 1.0  # to the same site
 
