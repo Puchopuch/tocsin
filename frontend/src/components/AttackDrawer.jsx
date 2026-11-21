@@ -52,6 +52,7 @@ function Sheet({ attack, now, titleId, done, onToggleStep }) {
       <p className="mt-2 text-[14px] text-muted">
         {t.detected} <time dateTime={machineDate(attack.first_seen)}>{fullDate(attack.first_seen, lang)}</time>
       </p>
+      {attack.ai && <p className="drawer-ai mt-2 text-[14px] text-muted">{t.aiDetails(attack.ai)}</p>}
 
       <div className="mt-6">
         <Facts attack={attack} />

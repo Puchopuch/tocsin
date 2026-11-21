@@ -275,7 +275,7 @@ def test_values_never_become_sql(isolated):
             assert store.cached(url) == Cached(value, value, value.encode())
         tables = store._db.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
         rows = store._db.execute("SELECT count(*) FROM http_cache").fetchone()[0]
-    assert tables == [("http_cache",)] and rows == len(INJECTIONS)
+    assert sorted(tables) == [("ai_cache",), ("http_cache",)] and rows == len(INJECTIONS)
 
 
 def test_every_query_is_a_fixed_text():

@@ -1,0 +1,1 @@
+La version précédente dépassait les longueurs permises. Raccourcis : titre de 10 mots au plus, method et loot de 45 caractères au plus, am_i_affected et action de 75 caractères au plus, dans chaque langue.

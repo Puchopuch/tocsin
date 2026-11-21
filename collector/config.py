@@ -30,6 +30,7 @@ RANSOMWARE_LIVE_KEY = "RANSOMWARE_LIVE_API_KEY"
 # decompressed, and gives up on a request after 60 s in all.
 ALLOWED_HOSTS = frozenset({
     "www.cisa.gov", "cert.cyber.gouv.fr", "www.cert.cyber.gouv.fr", "api-pro.ransomware.live",
+    "www.bleepingcomputer.com", "therecord.media", "www.zataz.com", "www.lemagit.fr", "api.mistral.ai",
 })
 MAX_REDIRECTS = 3
 MAX_RESPONSE_BYTES = 20 * 1024 * 1024
@@ -48,7 +49,49 @@ SOURCE_DOMAINS = {
     "NVD": "nvd.nist.gov",
     "CERT-FR": CERTFR_HOST,
     "ransomware.live": RANSOMWARE_LIVE_HOST,
+    "BleepingComputer": "bleepingcomputer.com",
+    "The Record": "therecord.media",
+    "ZATAZ": "zataz.com",
+    "LeMagIT": "lemagit.fr",
 }
+
+# Phase 2: articles of the specialised press, read by an AI (Mistral), only when the user gives a
+# key. (name, feed, language)
+PRESS_FEEDS = (
+    ("BleepingComputer", "https://www.bleepingcomputer.com/feed/", "en"),
+    ("The Record", "https://therecord.media/feed", "en"),
+    ("ZATAZ", "https://www.zataz.com/feed/", "fr"),
+    ("LeMagIT", "https://www.lemagit.fr/rss/ContentSyndication.xml", "fr"),
+)
+MISTRAL_API = "https://api.mistral.ai/v1"
+MISTRAL_KEY = "MISTRAL_API_KEY"
+# Mistral Small 4, version 26.03 of the Mistral documentation. A dated model, never "-latest", so
+# that each card says which model wrote it. check-sources says when Mistral no longer offers it.
+MISTRAL_MODEL = "mistral-small-2603"
+AI_TEMPERATURE = 0.1
+MAX_AI_CALLS = 40  # per run, option --max-ai-calls
+MAX_ARTICLE_CHARS = 8_000  # what the AI receives of an article, at most
+MIN_ARTICLE_CHARS = 400  # below, the summary of the feed is read instead
+AI_CACHE_DAYS = 30
+MAX_QUOTE_WORDS = 25
+
+# Words of the field, in French and English: an article without one of them never reaches the AI.
+DOMAIN_WORDS = (
+    "cyberattaque", "cyber-attaque", "rançongiciel", "rancongiciel", "ransomware", "fuite de données",
+    "data breach", "data leak", "piratage", "piraté", "piratée", "hacked", "hackers", "compromis",
+    "compromise", "compromised", "zero-day", "0-day", "exploited", "exploitée", "ddos", "déni de service",
+    "denial of service", "hameçonnage", "phishing", "intrusion", "breach", "extortion", "extorsion",
+    "malware", "logiciel malveillant", "stolen data", "données volées", "cyber incident", "cyberincident",
+)
+
+# Authorities whose attribution of an attack to a country is shown. A closed list: the code cannot
+# check what a "major medium" is, so a country named by anyone else is not shown.
+AUTHORITIES = (
+    "ANSSI", "CERT-FR", "CISA", "FBI", "NSA", "NCSC", "Europol", "Interpol", "ENISA", "BSI", "CCCS",
+    "ACSC", "Département de la Justice", "Department of Justice", "DOJ", "Trésor américain", "US Treasury",
+    "Maison-Blanche", "White House", "gouvernement", "government", "ministère", "ministry", "parquet",
+    "prosecutor", "Commission européenne", "European Commission", "Conseil de l'UE", "Council of the EU",
+)
 
 # Lengths of frontend/README.md (B5 rule 5).
 MAX_TITLE_WORDS = 10

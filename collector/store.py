@@ -31,6 +31,13 @@ def connect(path: Path | str) -> sqlite3.Connection:
             "CREATE TABLE IF NOT EXISTS http_cache (url TEXT PRIMARY KEY, etag TEXT, "
             "last_modified TEXT, body BLOB NOT NULL, fetched_at TEXT NOT NULL)"
         )
+        # The answers of the AI, by fingerprint of what was sent: the same article never costs a
+        # second call. Kept 30 days.
+        db.execute(
+            "CREATE TABLE IF NOT EXISTS ai_cache (fingerprint TEXT PRIMARY KEY, answer TEXT NOT NULL, "
+            "created_at TEXT NOT NULL)"
+        )
+        db.execute("DELETE FROM ai_cache WHERE created_at < datetime('now', '-30 days')")
         db.commit()
     except sqlite3.DatabaseError:
         db.close()
@@ -66,6 +73,17 @@ class Store:
             "SELECT etag, last_modified, body FROM http_cache WHERE url = ?", (url,)
         ).fetchone()
         return Cached(row[0], row[1], bytes(row[2])) if row else None
+
+    def answer(self, fingerprint: str) -> str | None:
+        row = self._db.execute("SELECT answer FROM ai_cache WHERE fingerprint = ?", (fingerprint,)).fetchone()
+        return row[0] if row else None
+
+    def keep_answer(self, fingerprint: str, answer: str) -> None:
+        self._db.execute(
+            "INSERT OR REPLACE INTO ai_cache (fingerprint, answer, created_at) VALUES (?, ?, datetime('now'))",
+            (fingerprint, answer),
+        )
+        self._db.commit()
 
     def save(self, url: str, etag: str | None, last_modified: str | None, body: bytes) -> None:
         if not etag and not last_modified:

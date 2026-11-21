@@ -41,7 +41,12 @@ const FR = {
   noMatch: 'Aucune attaque ne correspond à ces filtres.',
   showAll: 'Tout afficher',
   inBrief: 'En bref',
-  footer: 'Chaque fiche cite ses sources. Les fiches sont construites à partir de ces sources par des règles fixes, sans IA.',
+  footer: 'Chaque fiche cite ses sources. Les fiches de la CISA et du CERT-FR sont construites par des règles fixes ; celles de la presse sont rédigées par une IA à partir de faits vérifiés, et le disent.',
+  aiNote: (role) => (role === 'traduction' ? 'Texte de la CISA traduit par une IA' : 'Rédigée par une IA à partir de l’article'),
+  aiDetails: ({ role, model, prompts }) =>
+    role === 'traduction'
+      ? `Le texte de la CISA est traduit par une IA (${model}, consignes ${prompts}), sans rien ajouter ; le code vérifie qu’aucun chiffre ni lien n’apparaît en plus.`
+      : `Fiche rédigée par une IA (${model}, consignes ${prompts}) à partir des seuls faits que l’article prouve par une citation ; le niveau, les liens et les statuts sont fixés par le code.`,
   methodLink: 'Méthode et sources',
   shown: (n) => (n === 0 ? 'Aucune attaque affichée' : `${n}${NBSP}${n > 1 ? 'attaques affichées' : 'attaque affichée'}`),
   origin: 'Origine',
@@ -84,6 +89,7 @@ const FR = {
   origins: [
     ['Autorités', 'CISA, l’agence américaine de cybersécurité (failles déjà exploitées), et CERT-FR (alertes).'],
     ['Revendications de pirates', 'ransomware.live, toujours affichées comme « Revendiqué, non confirmé ».'],
+    ['Presse spécialisée', 'BleepingComputer, The Record, ZATAZ et LeMagIT, lus par une IA (Mistral) seulement quand une clé est fournie : chaque fait doit être cité mot pour mot dans l’article, et le code fixe le niveau, les liens et les statuts.'],
   ],
   limits: [
     'Les fiches sont construites automatiquement à partir des sources citées : si une source se trompe, la fiche aussi.',
@@ -91,6 +97,7 @@ const FR = {
     'Une information absente est marquée « Non communiqué » plutôt que devinée.',
     "Aucune donnée personnelle : une revendication dont la victime pourrait être une personne n'est pas publiée.",
     'Aucun lien vers les sites des rançonneurs ni vers des données volées.',
+    'Une fiche rédigée ou traduite par une IA le dit sur la fiche elle-même.',
     "Les données sont mises à jour à chaque collecte, dont l'heure est affichée en haut de la page : ce n'est pas du direct.",
   ],
 };
@@ -115,7 +122,12 @@ const EN = {
   noMatch: 'No attack matches these filters.',
   showAll: 'Show all',
   inBrief: 'In brief',
-  footer: 'Every card cites its sources. The cards are built from these sources by fixed rules, without AI.',
+  footer: 'Every card cites its sources. CISA and CERT-FR cards are built by fixed rules; press cards are written by an AI from checked facts, and say so.',
+  aiNote: (role) => (role === 'traduction' ? 'CISA text translated by an AI' : 'Written by an AI from the article'),
+  aiDetails: ({ role, model, prompts }) =>
+    role === 'traduction'
+      ? `The CISA text is translated by an AI (${model}, prompts ${prompts}), adding nothing; the code checks that no number or link appears in addition.`
+      : `Card written by an AI (${model}, prompts ${prompts}) from the facts the article proves with a quote, and nothing else; the level, links and statuses are set by the code.`,
   methodLink: 'Method and sources',
   shown: (n) => (n === 0 ? 'No attack shown' : `${n} ${n > 1 ? 'attacks shown' : 'attack shown'}`),
   origin: 'Origin',
@@ -158,6 +170,7 @@ const EN = {
   origins: [
     ['Authorities', 'CISA, the US cybersecurity agency (flaws already exploited), and CERT-FR, the French government’s computer emergency team (alerts).'],
     ['Claims by attackers', 'ransomware.live, always shown as “Claimed, not confirmed”.'],
+    ['Specialised press', 'BleepingComputer, The Record, ZATAZ and LeMagIT, read by an AI (Mistral) only when a key is given: each fact must be quoted word for word from the article, and the code sets the level, links and statuses.'],
   ],
   limits: [
     'The cards are built automatically from the sources cited: if a source is wrong, so is the card.',
@@ -165,6 +178,7 @@ const EN = {
     'Missing information is marked “Not disclosed” rather than guessed.',
     'No personal data: a claim whose victim could be a person is not published.',
     'No link to extortionists’ sites or to stolen data.',
+    'A card written or translated by an AI says so on the card itself.',
     'The data is updated at each collection, whose time is shown at the top of the page: this is not live.',
   ],
 };

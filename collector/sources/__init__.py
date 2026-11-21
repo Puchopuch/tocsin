@@ -22,6 +22,7 @@ Guarded:
 from __future__ import annotations
 
 import ipaddress
+import json
 import socket
 import ssl
 import time
@@ -55,6 +56,10 @@ class ApiKey:
     header: str
     host: str
     secret: SecretStr
+    prefix: str = ""  # "Bearer " for Mistral
+
+    def value(self) -> str:
+        return self.prefix + self.secret.get_secret_value()
 
 
 def window_start(now: datetime) -> datetime:
@@ -238,7 +243,7 @@ class Fetcher:
         if key is not None:
             if target.host != key.host:
                 raise SourceError(f"{target.host} : la clé {key.header} n'est envoyée qu'à {key.host}")
-            sent[key.header] = key.secret.get_secret_value()
+            sent[key.header] = key.value()
             cache = False
         cached = self._store.cached(str(target)) if cache and self._store else None
         if cached is not None:
@@ -274,9 +279,29 @@ class Fetcher:
                 self._store.save(str(target), etag, modified, body)
             return body
 
-    def _send(self, address: httpx.URL, headers: dict[str, str]) -> httpx.Response:
+    def post_json(self, url: str, payload: dict, *, key: ApiKey) -> bytes:
+        """A JSON payload sent to an API with its key: the same guards as get (listed site, https,
+        public addresses, time and size limits), never a redirect, never cached. An HTTP error
+        raises SourceError with its status (401 and 403: key refused; 429: too many requests)."""
+        try:
+            target = httpx.URL(url)
+        except (httpx.InvalidURL, TypeError, ValueError):
+            raise SourceError("adresse illisible") from None
+        self._check(target)
+        if target.host != key.host:
+            raise SourceError(f"{target.host} : la clé {key.header} n'est envoyée qu'à {key.host}")
+        headers = {key.header: key.value(), "Content-Type": "application/json", "Accept": "application/json"}
+        response = self._send(target, headers, method="POST", content=json.dumps(payload).encode("utf-8"))
+        try:
+            if 300 <= response.status_code:
+                raise SourceError(f"{target.host} : HTTP {response.status_code}", response.status_code)
+            return self._read(target, response)
+        finally:
+            response.close()
+
+    def _send(self, address: httpx.URL, headers: dict[str, str], method: str = "GET", content: bytes | None = None) -> httpx.Response:
         self._pause(address.host)
-        request = self._client.build_request("GET", address, headers=headers)
+        request = self._client.build_request(method, address, headers=headers, content=content)
         try:
             response = self._client.send(request, stream=True)
         except httpx.InvalidURL:  # httpx reads the Location of a redirect even when it does not follow it

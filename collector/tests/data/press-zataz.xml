@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Invented articles, in the format of a press feed: no real organisation, group or person. -->
+<rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/">
+<channel>
+<title>Exemple de flux de presse</title>
+<link>https://www.zataz.com/</link>
+<description>Articles inventés pour les tests du collecteur</description>
+<item>
+<title>Fuite de données chez Exemple Mutuelle : 120 000 adhérents touchés</title>
+<link>https://www.zataz.com/fuite-de-donnees-exemple-mutuelle/</link>
+<pubDate>Thu, 19 Nov 2026 09:30:00 +0000</pubDate>
+<description><![CDATA[<p>La mutuelle confirme une fuite de données touchant ses adhérents.</p>]]></description>
+</item>
+<item>
+<title>Rançongiciel : la mairie de Fictiville paralysée</title>
+<link>https://www.zataz.com/rancongiciel-mairie-fictiville/</link>
+<pubDate>Wed, 18 Nov 2026 14:00:00 +0000</pubDate>
+<description><![CDATA[<p>Les services de la mairie sont à l'arrêt depuis trois jours.</p>]]></description>
+</item>
+<item>
+<title>Bien choisir son mot de passe en 2026</title>
+<link>https://www.zataz.com/bien-choisir-son-mot-de-passe/</link>
+<pubDate>Tue, 17 Nov 2026 08:00:00 +0000</pubDate>
+<description><![CDATA[<p>Quelques conseils simples pour tous.</p>]]></description>
+</item>
+<item>
+<title>Cyberattaque contre Exemple Transports, il y a un mois</title>
+<link>https://www.zataz.com/cyberattaque-ancienne/</link>
+<pubDate>Mon, 19 Oct 2026 08:00:00 +0000</pubDate>
+<description><![CDATA[<p>Un article trop ancien pour la fenêtre de sept jours.</p>]]></description>
+</item>
+<item>
+<title>Cyberattaque relayée par un autre site</title>
+<link>https://evil.example/cyberattaque/</link>
+<pubDate>Thu, 19 Nov 2026 10:00:00 +0000</pubDate>
+<description><![CDATA[<p>Un lien qui ne mène pas au site du flux.</p>]]></description>
+</item>
+</channel>
+</rss>

@@ -42,14 +42,11 @@ def is_widespread(vendor: str, product: str) -> bool:
 
 
 def cap_claim(card: dict) -> dict:
-    """Safety net, applied last (B5 rule 4): a claimed or rumoured attack is never shown above
-    "significative", whatever came before."""
-    attacker = card.get("attacker") or {}
-    unconfirmed = (
-        card["victim"]["status"] == "revendique"
-        or attacker.get("status") == "revendique"
-        or card["reliability"] == "rumeur"
-    )
+    """Safety net, applied last (B5 rule 4): an attack that is only claimed, or a rumour, is never
+    shown above "significative", whatever came before. Once the victim confirms the attack, a
+    group that claims it no longer limits the level (B9): the attack is real, only its author is
+    claimed."""
+    unconfirmed = card["victim"]["status"] == "revendique" or card["reliability"] == "rumeur"
     if unconfirmed and rank(card["severity"]) < rank("significative"):
         return {**card, "severity": CLAIM[0], "severity_reason": dict(CLAIM[1])}
     return card

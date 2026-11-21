@@ -106,6 +106,7 @@ the same in both languages.
 | `action` | one sentence, 75 characters at most in each language | "Que faire :" |
 | `severity_reason`, `summary`, `timeline`, `protection_steps`, `technical`, `sources` | as before | detail panel |
 | `untranslated` | `["title"]`, or empty | the English page shows that title in French, marked `lang="fr"` |
+| `ai` | `{role: "redaction" or "traduction", model, prompts}`, or `null` | on the card itself: "Rédigée par une IA à partir de l'article" or "Texte de la CISA traduit par une IA"; the panel names the model and the version of the prompts |
 
 The English page uses the same rules with the words of `src/lib/i18n.js`. `untranslated` marks a
 title that the collector kept in French in the English version, because translating it would

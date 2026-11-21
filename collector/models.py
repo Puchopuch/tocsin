@@ -117,6 +117,17 @@ class CertfrAlert(Model):
     risks: list[str] = Field(default_factory=list)
 
 
+class Article(Model):
+    """One article of a press feed (phase 2)."""
+
+    site: str
+    url: str
+    title: str
+    published: datetime
+    summary: str = ""
+    lang: Literal["fr", "en"]
+
+
 class Claim(Model):
     """One ransomware claim recorded by ransomware.live. Only what a card shows is kept."""
 
@@ -227,6 +238,22 @@ class Source(Model):
         return self
 
 
+class AiInfo(Model):
+    """A card written ("redaction") or translated ("traduction") by an AI: the site says so on the
+    card, and the card keeps which model and which version of the prompts did it."""
+
+    role: Literal["redaction", "traduction"]
+    model: str = Field(pattern=r"^[a-z0-9][a-z0-9.-]{2,60}$")
+    prompts: str = Field(pattern=r"^[0-9a-f]{10}$")
+
+    @field_validator("model")
+    @classmethod
+    def _dated(cls, value: str) -> str:
+        if value.endswith("latest"):
+            raise ValueError("modèle d'IA non daté")
+        return value
+
+
 class Card(Model):
     id: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9-]*$", max_length=100)
     severity: Level
@@ -255,6 +282,7 @@ class Card(Model):
     # Fields whose English text is the words of the source, kept as they are because translating
     # them would mean inventing.
     untranslated: list[Literal["title"]] = Field(default_factory=list)
+    ai: AiInfo | None = None
 
     @field_validator("first_seen")
     @classmethod
@@ -281,10 +309,9 @@ class Card(Model):
 
     @model_validator(mode="after")
     def _claims_stay_significant(self) -> Card:
-        # B5 rule 4: a claim or a rumour is never above "significative".
-        claimed = self.victim.status == "revendique" or (
-            self.attacker is not None and self.attacker.status == "revendique"
-        )
+        # B5 rule 4: an attack only claimed, or a rumour, is never above "significative". Once the
+        # victim confirms it, the claim of a group only names a presumed author (B9).
+        claimed = self.victim.status == "revendique"
         if (claimed or self.reliability == "rumeur") and self.severity in ("critique", "grave"):
             raise ValueError("revendication ou rumeur au-dessus de « significative »")
         return self

@@ -9,9 +9,14 @@ collector. **Tocsin** is a provisional name (`APP_NAME` in `frontend/src/config.
 | `collector/` | Python program that reads reliable sources and writes `frontend/public/data/cards.json` |
 | `frontend/` | the static site, which shows that file and nothing else (see `frontend/README.md`) |
 
-The collector is built in three phases. **Phase 1 (without AI) is done**: the CISA catalogue of
-exploited flaws, the CERT-FR alerts and the ransomware claims of ransomware.live. Phase 2 (press
-articles read by AI) and phase 3 (grouping, repeated runs, GitHub Actions) come next.
+The collector works in two phases. **Phase 1, without AI**: the CISA catalogue of exploited
+flaws and the CERT-FR alerts, plus the ransomware claims of ransomware.live with a key. **Phase 2,
+with AI, only with a Mistral key**: articles of the specialised press read by Mistral; duplicates
+are merged. Phase 3 (repeated runs, GitHub Actions) comes later.
+
+**Honestly**: phase 2 and ransomware.live are tested with simulated answers only. No test, and no
+check of this repository, ever called the real Mistral or the real ransomware.live: each user
+brings their own keys.
 
 ## Install, once (Windows)
 
@@ -115,6 +120,41 @@ would mean inventing: the English version keeps the French title, the card carri
 card.
 
 The collector writes plain spaces; the site adds French typography to French texts only.
+
+## What phase 2 publishes, with a Mistral key
+
+Articles of BleepingComputer, The Record, ZATAZ and LeMagIT (`config.PRESS_FEEDS`), of the last 7
+days, that speak of an attack (a word of `config.DOMAIN_WORDS`), newest first. **The AI reads, the
+code judges** (`collector/press.py`, `collector/facts.py`):
+
+1. The text of the article is read on its page when robots.txt allows it, visible text only
+   (`collector/article.py`: no comment, attribute, script, hidden element or invisible character),
+   else the summary of the feed; cut to 8,000 characters.
+2. **First call**: the AI extracts facts (`Facts`), each with a quote of 3 to 25 words. The code
+   keeps a fact only when its quote is in the article word for word, after normalising spaces,
+   apostrophes, quotes and dashes (never approximately), and says what the fact says: the name or
+   the number is in the quote, a fact that raises the level holds a word of its kind ("santé",
+   "hôpital"...). A country is kept only when the quote names an authority of a closed list
+   (`config.AUTHORITIES`: ANSSI, CERT-FR, CISA, FBI, NCSC, Europol, a government...).
+3. **The code** sets the level from the facts kept (grid B8), the statuses, the audience, the
+   links (those of the feed) and the dates. A victim that may be a person is held back.
+4. **Second call**: the AI writes the texts of the card in French and in English from the facts
+   kept only, never from the article. "Que faire" comes from the actions recommended by the
+   article, each one proven by a quote. Too long: asked once more, then refused. A text holding a
+   link, an e-mail, a phone number, an IBAN, a wallet address, or a number that is not in the
+   facts, is refused.
+5. With the calls left, the AI translates into French the text of the CISA for its cards, adding
+   nothing; the English stays the text of the CISA.
+
+Every card written or translated by the AI says so on the card itself, and keeps the dated model
+(`config.MISTRAL_MODEL`, never `-latest`) and the version of the prompts (`collector/prompts/`).
+At most 40 calls per run (`--max-ai-calls`), newest articles first; after HTTP 429, a growing wait
+then a clean stop; an answer is kept 30 days in `state.db`, so that the same text never costs a
+second call. Only the instructions and the text to read are sent to Mistral.
+
+**Duplicates** (`collector/cluster.py`): a press card citing the CVE of a CISA or CERT-FR card
+joins it as one more source; press cards and claims about the same victim (normalised name)
+within 7 days make one card, with all their sources.
 
 ## Rules the code applies
 

@@ -94,6 +94,15 @@ export function normalizeAttack(raw, lang = 'fr') {
       exploited: raw.exploited === true,
       // A flaw (an alert about software) or an attack; an older file without the field: an attack.
       kind: raw.kind === 'faille' ? 'faille' : 'attaque',
+      // Written or translated by an AI: the card says so. Anything else in the field is ignored.
+      ai:
+        raw.ai && (raw.ai.role === 'redaction' || raw.ai.role === 'traduction')
+          ? {
+              role: raw.ai.role,
+              model: typeof raw.ai.model === 'string' ? raw.ai.model.slice(0, 60) : '',
+              prompts: typeof raw.ai.prompts === 'string' ? raw.ai.prompts.slice(0, 20) : '',
+            }
+          : null,
       sector: text(raw.sector),
       audience: AUDIENCES.includes(raw.audience) ? raw.audience : 'les_deux',
       // Only "confirme" counts as confirmed: anything else is treated as a rumour.

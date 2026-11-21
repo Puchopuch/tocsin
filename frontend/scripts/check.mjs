@@ -538,7 +538,7 @@ try {
     report('Information absente : « Non communiqué », la ligne reste', (text.match(/Non communiqué/g) ?? []).length >= 3);
     report(`Nom tiré de APP_NAME (« ${APP_NAME} ») dans l’en-tête et le titre de page`, clean(await page.locator('.site-header__name').textContent()) === APP_NAME && (await page.title()).startsWith(APP_NAME));
     report('Plus de ligne de démo ni de lien de simulation', (await page.locator('.demo-line').count()) === 0 && !/Simuler|Données fictives/.test(text));
-    report('Pied de page : les fiches sont construites sans IA, sans le prétendre', /par des règles fixes, sans IA/.test(text) && !/rédigées par une IA/.test(text));
+    report('Pied de page : règles fixes pour la CISA et le CERT-FR, une IA pour la presse, qui le dit', /construites par des règles fixes/.test(text) && /rédigées par une IA à partir de faits vérifiés, et le disent/.test(text));
     report('Aucune animation au chargement', (await page.evaluate(() => document.getAnimations().length)) === 0);
     report('Aucune erreur dans la console', errors.length === 0, errors.join(' | '));
 
@@ -954,6 +954,33 @@ try {
       hrefs.join(' '),
     );
     report('Aucun cookie, ni lu ni posé', [fr, en].every((s) => s.cookie === '' && s.cookies === 0));
+  }
+
+  // A card written or translated by an AI says so on the card itself, in "En bref" too, and its
+  // panel names the model and the version of the prompts.
+  {
+    const withAi = structuredClone(usual);
+    const written = withAi.attacks.find((card) => card.severity === 'grave');
+    written.ai = { role: 'redaction', model: 'mistral-small-2603', prompts: '0123456789' };
+    const translated = withAi.attacks.find((card) => card.severity === 'mineure');
+    translated.ai = { role: 'traduction', model: 'mistral-small-2603', prompts: '0123456789' };
+    const seen = {};
+    for (const locale of ['fr-FR', 'en-GB']) {
+      const { context, page } = await openPage({ feed: withAi, locale });
+      const notes = await page.$$eval('.card__ai, .brief__ai', (nodes) => nodes.map((node) => node.textContent.trim()));
+      await page.locator(`#lire-${written.id}`).click();
+      await page.waitForSelector('[role="dialog"]');
+      const details = (await page.locator('.drawer-ai').textContent()) ?? '';
+      await context.close();
+      seen[locale] = { notes, details };
+    }
+    report(
+      'Fiche rédigée ou traduite par une IA : la mention est sur la carte (et dans « En bref »), le panneau nomme le modèle et la version des consignes',
+      JSON.stringify(seen['fr-FR'].notes) === JSON.stringify(['Rédigée par une IA à partir de l’article', 'Texte de la CISA traduit par une IA']) &&
+        JSON.stringify(seen['en-GB'].notes) === JSON.stringify(['Written by an AI from the article', 'CISA text translated by an AI']) &&
+        /mistral-small-2603/.test(seen['fr-FR'].details) && /0123456789/.test(seen['en-GB'].details),
+      JSON.stringify(seen),
+    );
   }
 
   // Control: in the built page, the CSP and Trusted Types really block innerHTML, eval, new

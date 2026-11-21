@@ -253,7 +253,8 @@ def test_tls_is_always_verified():
 
 
 def test_no_code_turns_tls_checks_off_or_speaks_plain_http():
-    forbidden = re.compile(r"verify\s*=\s*False|CERT_NONE|check_hostname\s*=\s*False|_create_unverified_context|http://")
+    # "{http://...}" is the name of an XML namespace (Atom), not an address the collector contacts.
+    forbidden = re.compile(r"verify\s*=\s*False|CERT_NONE|check_hostname\s*=\s*False|_create_unverified_context|(?<!\{)http://")
     found = [f"{path.name}: {match.group(0)}" for path in code_files() for match in forbidden.finditer(path.read_text(encoding="utf-8"))]
     assert found == []
 

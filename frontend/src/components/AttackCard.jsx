@@ -6,6 +6,12 @@ import { cardDate, fullDate, machineDate, origin, sourcesLine, targets } from '.
 /** Status of the whole card, shown only when it is not confirmed. */
 export const cardStatus = (attack, t) => (attack.reliability === 'rumeur' ? t.rumour(attack.reliability_source) : null);
 
+/** On the card itself: written or translated by an AI. */
+function AiNote({ attack }) {
+  const { t } = useLang();
+  return attack.ai ? <p className="card__ai text-[14px] text-muted">{t.aiNote(attack.ai.role)}</p> : null;
+}
+
 /** Origine, Cibles, Méthode, Impact: grey label, black value; "Non communiqué" when missing. */
 export function Facts({ attack }) {
   const { lang, t } = useLang();
@@ -84,6 +90,7 @@ export default function AttackCard({ attack, now, une = false, onOpen }) {
               {attack.title}
             </h2>
             <p className="card__lede">{attack.lede || t.notGiven}</p>
+            <AiNote attack={attack} />
             <Facts attack={attack} />
           </div>
           <Concern attack={attack} />
@@ -100,6 +107,7 @@ export default function AttackCard({ attack, now, une = false, onOpen }) {
         {attack.title}
       </h2>
       <p className="card__lede">{attack.lede || t.notGiven}</p>
+      <AiNote attack={attack} />
       <Facts attack={attack} />
       <Concern attack={attack} />
       <Foot attack={attack} onOpen={onOpen} />
@@ -120,6 +128,7 @@ export function BriefList({ attacks, now, onOpen }) {
           </time>
           <span className="brief__name" lang={attack.titleLang}>
             {attack.title}
+            {attack.ai && <span className="brief__ai text-[14px] text-muted"> {t.aiNote(attack.ai.role)}</span>}
           </span>
           <button id={`lire-${attack.id}`} type="button" className="link brief__read" aria-label={t.readLabel(attack.title)} onClick={() => onOpen(attack.id)}>
             {t.read}

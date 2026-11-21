@@ -82,7 +82,9 @@ def test_validate(capsys):
     assert "invalide" in capsys.readouterr().out
 
 
-def test_phase_two_is_not_built_yet(capsys):
-    assert collect("run", "--phase", "2") == 2
-    assert not config.OUTPUT_PATH.exists()
-    assert "pas encore construite" in capsys.readouterr().out
+def test_without_a_mistral_key_phase_two_is_skipped_and_the_rest_works(capsys):
+    assert collect("run", "--phase", "2") == 0
+    printed = capsys.readouterr().out
+    assert "Presse, lue par l'IA (Mistral) : sautée, clé absente (MISTRAL_API_KEY vide dans .env)" in printed
+    assert "Appels à l'IA : 0 (phase 2 sautée)" in printed
+    assert len(written()["attacks"]) == 9
