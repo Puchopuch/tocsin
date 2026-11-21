@@ -157,6 +157,40 @@ source, fiches rejetées avec leur raison, fiches mises de côté, appels à l'I
 ce qu'est devenu `cards.json`. Le site n'a qu'un mode : `npm run dev` et `npm run build` lisent les
 vraies fiches ; sans collecte, il dit « Aucune attaque recensée pour le moment ».
 
+## Collecter régulièrement
+
+Le site ne montre que la dernière collecte. Pour qu'il reste à jour, collectez quelques fois par
+jour, par exemple à 7 h, 13 h et 19 h : les sources changent quelques fois par jour, et le
+collecteur réutilise les réponses qu'il a déjà (ETag, Last-Modified) ; collecter plus souvent
+n'apporte rien. Avec `npm run dev`, rechargez la page pour voir les nouvelles fiches ; un site
+construit avec `npm run build` montre celles du moment de sa construction : reconstruisez-le après
+la collecte.
+
+**Windows** : une tâche du Planificateur de tâches, créée depuis PowerShell à la racine du dépôt
+(`pythonw` lance le collecteur sans ouvrir de fenêtre) :
+
+```powershell
+$root = (Get-Location).Path
+$action = New-ScheduledTaskAction -Execute "$root\.venv\Scripts\pythonw.exe" -Argument '-m collector run' -WorkingDirectory $root
+$times = '07:00', '13:00', '19:00' | ForEach-Object { New-ScheduledTaskTrigger -Daily -At $_ }
+Register-ScheduledTask -TaskName 'Tocsin' -Action $action -Trigger $times
+```
+
+La tâche tourne quand votre session est ouverte. Le Planificateur affiche le résultat de la
+dernière exécution (0 : réussie, 1 : une source a échoué). Pour la retirer :
+`Unregister-ScheduledTask -TaskName 'Tocsin'`.
+
+**Linux et macOS** : `crontab -e`, puis cette ligne, avec le chemin de votre clone :
+
+```
+0 7,13,19 * * * cd "$HOME/veille-cyber" && mkdir -p collector/logs && .venv/bin/python -m collector run >> collector/logs/runs.log 2>&1
+```
+
+Sous macOS, cron ne peut pas ouvrir le Bureau, les Documents ni les Téléchargements sans « Accès
+complet au disque » : placez le clone ailleurs, dans votre dossier personnel par exemple. Une
+collecte où une source échoue garde les fiches précédentes (voir « Les règles que le code
+applique »).
+
 ## Où vont les données
 
 | Fichier | Ce qu'il contient | Dans Git |
@@ -285,7 +319,9 @@ Les tests n'atteignent jamais le réseau ni un serveur DNS, et ne touchent jamai
 `state.db`, au journal ni à `cards.json`. Les échantillons de la CISA et du CERT-FR sont de vrais
 extraits ; les articles de presse, les réponses de ransomware.live et celles de l'IA sont inventés,
 noms compris. `npm run check` construit le site, puis le parcourt dans un navigateur en français et
-en anglais, avec des fiches de test.
+en anglais, avec des fiches de test. Au lieu de télécharger Chromium, il peut utiliser le Chrome
+déjà installé : `$env:CHECK_BROWSER = 'chrome'` sous PowerShell, ou
+`CHECK_BROWSER=chrome npm run check` ailleurs.
 
 Les audits de la CI, à la main (sous Linux et macOS, `.venv/bin/python`) :
 

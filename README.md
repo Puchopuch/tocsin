@@ -152,6 +152,37 @@ rejected with their reason, cards held back, AI calls made and left, and what ha
 without a collection, it says "Aucune attaque recensée pour le moment" ("No attack recorded at the
 moment").
 
+## Collect regularly
+
+The site shows the last collection only. To keep it current, collect a few times a day, for
+instance at 7:00, 13:00 and 19:00: the sources change a few times a day, and the collector reuses
+the answers it already has (ETag, Last-Modified), so collecting more often brings nothing. With
+`npm run dev`, reload the page to see the new cards; a site built with `npm run build` shows those
+of the moment it was built: build it again after the collection.
+
+**Windows**: a task of the Task Scheduler, created from PowerShell at the root of the repository
+(`pythonw` runs the collector without opening a window):
+
+```powershell
+$root = (Get-Location).Path
+$action = New-ScheduledTaskAction -Execute "$root\.venv\Scripts\pythonw.exe" -Argument '-m collector run' -WorkingDirectory $root
+$times = '07:00', '13:00', '19:00' | ForEach-Object { New-ScheduledTaskTrigger -Daily -At $_ }
+Register-ScheduledTask -TaskName 'Tocsin' -Action $action -Trigger $times
+```
+
+The task runs while you are signed in. The Task Scheduler shows the result of the last run (0: done,
+1: a source failed). To remove it: `Unregister-ScheduledTask -TaskName 'Tocsin'`.
+
+**Linux and macOS**: `crontab -e`, then this line, with the path of your clone:
+
+```
+0 7,13,19 * * * cd "$HOME/veille-cyber" && mkdir -p collector/logs && .venv/bin/python -m collector run >> collector/logs/runs.log 2>&1
+```
+
+On macOS, cron cannot open the Desktop, Documents or Downloads folders without "Full Disk Access":
+keep the clone elsewhere, in your home folder for instance. A run where a source fails keeps the
+previous cards (see "Rules the code applies").
+
 ## Where the data goes
 
 | File | What it holds | In Git |
@@ -270,6 +301,8 @@ The tests never reach the network nor a DNS server, and never touch your `.env`,
 journal or `cards.json`. The CISA and CERT-FR samples are real extracts; the press articles, the
 ransomware.live answers and the answers of the AI are invented, names included. `npm run check`
 builds the site, then drives a browser through it in French and in English, with test cards.
+Instead of downloading Chromium, it can use the Chrome already installed:
+`$env:CHECK_BROWSER = 'chrome'` in PowerShell, or `CHECK_BROWSER=chrome npm run check` elsewhere.
 
 The audits of the CI, by hand (on Linux and macOS, `.venv/bin/python`):
 
