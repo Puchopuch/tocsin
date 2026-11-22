@@ -37,6 +37,28 @@ jobs:
       - name: Run the tests
         run: python -m pytest
 
+  # The README promises Python 3.12 or newer: the same tests with the latest stable Python. Not a
+  # required check of main, so that a new Python can only warn, never block a change.
+  collector-latest-python:
+    name: Collector tests (latest Python)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.x"
+          check-latest: true
+      - name: Install the pinned dependencies, and nothing else
+        run: |
+          python --version
+          python -m pip install --disable-pip-version-check --no-deps -r requirements-dev.txt
+          python -m pip check
+      - name: Run the tests
+        run: python -m pytest
+
   site:
     name: Site checks (npm run check)
     runs-on: ubuntu-24.04

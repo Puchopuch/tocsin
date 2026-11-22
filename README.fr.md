@@ -2,10 +2,10 @@
 
 *[English version: README.md](README.md)*
 
-Un service public d'information, en français et en anglais, sur les cyberattaques qui touchent le
-grand public et les entreprises. Tout ce que montre le site est réel : de vraies failles et de
-vraies attaques, lues dans des sources fiables par un collecteur, chaque fiche avec ses sources.
-**Tocsin** est un nom provisoire (`APP_NAME` dans `frontend/src/config.js`).
+Un service d'information gratuit et ouvert, en français et en anglais, sur les cyberattaques qui
+touchent le grand public et les entreprises. Tout ce que montre le site est réel : de vraies
+failles et de vraies attaques, lues dans des sources fiables par un collecteur, chaque fiche avec
+ses sources.
 
 ![Tocsin, en français : les vraies cartes d'une collecte](screenshots/tocsin-fr.png)
 
@@ -25,22 +25,57 @@ organisations en France.
 > apporte ses propres clés. Signalez tout ce qui ne marche pas avec elles (et, pour un problème de
 > sécurité, voyez [SECURITY.md](SECURITY.md)).
 
+## Avant de commencer
+
+**Installez trois outils**, avec leurs options par défaut :
+
+- [Git](https://git-scm.com/downloads) ;
+- [Python 3.12 ou plus récent](https://www.python.org/downloads/). Sous Windows, sur le premier
+  écran de l'installeur, **cochez « Add python.exe to PATH »** avant de cliquer sur « Install
+  Now » ;
+- [Node.js](https://nodejs.org/), la version LTS (20.19 ou plus récente).
+
+**Ouvrez PowerShell** (Windows) : menu Démarrer, tapez « PowerShell », puis ouvrez « Windows
+PowerShell » ; sous Windows 11, « Terminal » ouvre aussi PowerShell. Inutile de l'ouvrir en
+administrateur. Sous Linux et macOS, ouvrez un terminal.
+
+**Le dossier du projet** : PowerShell s'ouvre dans votre dossier personnel, que PowerShell appelle
+`$HOME`. Le projet y sera créé, dans un dossier `tocsin` : `$HOME\tocsin`. Évitez le Bureau et les
+Documents s'ils sont synchronisés par OneDrive : il y aurait des milliers de fichiers
+d'installation à envoyer.
+
+**Vérifiez les installations** : chaque commande doit afficher une version, Python 3.12 ou plus
+récent et Node.js v20.19 ou plus récent. Si l'une répond « … n'est pas reconnu … », voyez
+[Problèmes fréquents](#problèmes-fréquents).
+
+```powershell
+git --version
+py --version
+node --version
+```
+
+(`python3 --version` au lieu de `py --version` sous Linux et macOS.)
+
+**`npm.cmd` et `npx.cmd`** : sous Windows, ce README écrit `npm.cmd` et `npx.cmd` au lieu de `npm`
+et `npx`. PowerShell refuse souvent de lancer ces deux commandes (« l'exécution de scripts est
+désactivée sur ce système »), car il les trouve d'abord sous forme de scripts PowerShell ; les
+versions `.cmd` font exactement la même chose, sans ce blocage.
+
 ## Démarrage rapide, sans aucune clé
 
-Il faut [Git](https://git-scm.com/), [Python 3.12 ou plus récent](https://www.python.org/downloads/)
-et [Node.js 20.19 ou plus récent](https://nodejs.org/).
+Tapez ces commandes une par une, en attendant la fin de chacune.
 
 **Windows (PowerShell)**
 
 ```powershell
 git clone https://github.com/Puchopuch/tocsin.git
 cd tocsin
-py -3.12 -m venv .venv
+py -3 -m venv .venv
 .venv\Scripts\python -m pip install -r requirements-dev.txt
 .venv\Scripts\python -m collector run
 cd frontend
-npm ci
-npm run dev
+npm.cmd ci
+npm.cmd run dev
 ```
 
 **Linux et macOS**
@@ -56,9 +91,55 @@ npm ci
 npm run dev
 ```
 
-Ouvrez ensuite <http://127.0.0.1:5173> : les fiches des sept derniers jours, de la CISA et du
-CERT-FR. Le serveur de développement ne répond qu'à cet ordinateur, jamais au réseau local.
-Arrêtez-le avec Ctrl+C.
+Ouvrez ensuite <http://127.0.0.1:5173> (ou l'adresse affichée après `Local:`) : les fiches des sept
+derniers jours, de la CISA et du CERT-FR. Le serveur de développement ne répond qu'à cet
+ordinateur, jamais au réseau local. Arrêtez-le avec Ctrl+C.
+
+## Les fois suivantes
+
+Ouvrez PowerShell, collectez, puis lancez le site :
+
+```powershell
+cd $HOME\tocsin
+.venv\Scripts\python -m collector run
+cd frontend
+npm.cmd run dev
+```
+
+Sous Linux et macOS : `cd ~/tocsin`, `.venv/bin/python -m collector run`, `cd frontend`,
+`npm run dev`.
+
+La collecte se lance **à la racine** du projet (le dossier `tocsin`), le site **dans son
+sous-dossier `frontend`** : depuis `frontend`, `cd ..` remonte à la racine. Après une mise à jour
+du projet (`git pull`), relancez aussi les deux installations :
+`.venv\Scripts\python -m pip install -r requirements-dev.txt` à la racine, `npm.cmd ci` dans
+`frontend`.
+
+## Problèmes fréquents
+
+- **`npm` ou `npx` refusé** (« Impossible de charger le fichier …\npm.ps1, car l'exécution de
+  scripts est désactivée sur ce système ») : tapez `npm.cmd` ou `npx.cmd`, comme partout dans ce
+  README.
+- **`py`, `python`, `git` ou `node` « n'est pas reconnu »** : l'outil n'est pas installé, ou
+  PowerShell était déjà ouvert pendant l'installation : fermez-le et rouvrez-le. Si `py` manque
+  encore, relancez l'installeur de Python, choisissez « Modify », vérifiez que « py launcher » est
+  coché, puis cochez « Add Python to environment variables » à l'écran suivant.
+- **Ubuntu : « ensurepip is not available »** en créant `.venv` : installez le module manquant
+  (`sudo apt install python3-venv`), supprimez le dossier `.venv` à moitié créé (`rm -rf .venv`),
+  puis recommencez.
+- **macOS : `python3 --version` affiche une version plus ancienne que 3.12** (celle des outils
+  d'Apple) : installez Python depuis [python.org](https://www.python.org/downloads/) ou avec
+  Homebrew (`brew install python@3.12`), puis créez `.venv` avec `python3.12 -m venv .venv`.
+- **Le port 5173 est déjà pris** : le site prend le suivant et l'affiche après `Local:` (par
+  exemple <http://127.0.0.1:5174>) ; ouvrez cette adresse.
+- **Le bilan dit « échec, … ConnectError »** (ou `ConnectTimeout`, `ReadTimeout`) : la source n'a
+  pas répondu. Vérifiez votre connexion Internet, un pare-feu (il doit laisser sortir Python) ou
+  un proxy : le collecteur ne passe volontairement par aucun proxy ; sur un réseau qui en impose
+  un (entreprise, école), collectez depuis une autre connexion.
+- **Le site est vide après une collecte ratée** (« Aucune attaque recensée pour le moment ») : la
+  première collecte a échoué avant d'écrire la moindre fiche. Lisez son bilan, réglez la cause,
+  relancez la collecte, puis rechargez la page. Une source en panne n'efface jamais les fiches
+  déjà écrites.
 
 ## Les clés, pas à pas
 
@@ -72,13 +153,14 @@ du dépôt, que Git ignore.
 
 ### 1. Créer les clés
 
-- **Mistral** : sur <https://console.mistral.ai>, connectez-vous, ouvrez **API Keys**, puis
-  **Create new key**. Copiez la clé tout de suite : elle ne s'affiche qu'une fois. L'offre gratuite
-  (« Experiment ») demande un numéro de téléphone, pas de carte bancaire. **Sur l'offre gratuite,
-  Mistral peut utiliser vos requêtes pour entraîner ses modèles** : le collecteur ne lui envoie que
-  des articles de presse publics et des textes publics de la CISA, jamais rien de privé.
-  N'utilisez pas cette clé pour des données privées. Lisez avant les conditions actuelles de
-  Mistral.
+- **Mistral** : sur <https://console.mistral.ai>, créez un compte ou connectez-vous. La console
+  change souvent, ses offres aussi. Si elle vous propose un abonnement, cherchez plutôt l'option
+  qui active l'accès à l'API sur l'offre gratuite. Fixez ensuite une limite de dépenses à 0, pour
+  qu'aucun appel ne soit jamais facturé. Créez enfin la clé, dans la rubrique des clés d'API, et
+  copiez-la tout de suite : elle ne s'affiche qu'une fois. **Sur l'offre gratuite, Mistral peut
+  utiliser vos requêtes pour entraîner ses modèles** : le collecteur ne lui envoie que des
+  articles de presse publics et des textes publics de la CISA, jamais rien de privé. N'utilisez
+  pas cette clé pour des données privées. Lisez avant les conditions actuelles de Mistral.
 - **ransomware.live** : sur <https://my.ransomware.live>, créez un compte, puis générez votre jeton
   pour l'API PRO. Au moment où ce texte est écrit, l'API PRO est gratuite, avec 3 000 appels par
   jour ; une collecte en fait un ou deux. Lisez avant leurs conditions actuelles.
@@ -135,9 +217,8 @@ clair, et les autres sources mettent quand même le site à jour.
   et ne collez jamais une clé dans une issue, une pull request, une conversation ou une capture.
 - Le collecteur n'affiche, ne journalise ni ne stocke jamais une clé : il la garde comme valeur
   secrète, ne l'envoie qu'à sa propre API, jamais à travers une redirection.
-- **Si une clé fuit** : supprimez-la tout de suite là où vous l'avez créée (console Mistral,
-  **API Keys** ; my.ransomware.live), créez-en une nouvelle, mettez-la dans `.env`, et lancez
-  `check-sources`.
+- **Si une clé fuit** : supprimez-la tout de suite là où vous l'avez créée (console Mistral ;
+  my.ransomware.live), créez-en une nouvelle, mettez-la dans `.env`, et lancez `check-sources`.
 
 ## Commandes
 
@@ -299,7 +380,8 @@ de site, aucune clé, rien sur vous ni sur votre ordinateur.
 - **Tests** : `collector/tests/test_network.py`, `test_inputs.py`, `test_secrets_resilience.py`,
   `test_phase2.py`, et les vérifications de sécurité de `npm run check`.
 - **À chaque push** (GitHub Actions, `.github/workflows/ci.yml`), sans clé ni secret et avec des
-  droits en lecture seule : pytest, `npm run check`, gitleaks sur tout l'historique, pip-audit,
+  droits en lecture seule : pytest, sous Python 3.12 et sous la dernière version stable de Python,
+  `npm run check`, gitleaks sur tout l'historique, pip-audit,
   `npm audit` et Bandit. Les actions sont épinglées par commit. Chaque semaine, Dependabot propose
   une pull request pour toutes les mises à jour de pip, une pour toutes celles de npm, et celles
   des actions, quand les versions ont 14 jours ; les correctifs de sécurité tout de suite.
@@ -312,8 +394,8 @@ une issue publique.
 ```powershell
 .venv\Scripts\python -m pytest
 cd frontend
-npx playwright install chromium   # une fois
-npm run check
+npx.cmd playwright install chromium   # une fois
+npm.cmd run check
 ```
 
 Les tests n'atteignent jamais le réseau ni un serveur DNS, et ne touchent jamais à votre `.env`, à
@@ -331,7 +413,7 @@ Les audits de la CI, à la main (sous Linux et macOS, `.venv/bin/python`) :
 .venv\Scripts\python -m pip_audit --strict --no-deps --disable-pip -r requirements.txt -r requirements-dev.txt -r requirements-audit.txt
 .venv\Scripts\python -m bandit -r collector -x collector/tests
 cd frontend
-npm audit --audit-level=high
+npm.cmd audit --audit-level=high
 ```
 
 ## Limites

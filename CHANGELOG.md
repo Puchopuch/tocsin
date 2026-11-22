@@ -14,6 +14,16 @@ The changes of Tocsin, newest first. Versions follow [Semantic Versioning](https
 - The collector reads the cve.org links of CERT-FR pages with an HTML parser: a link in a comment,
   a script or plain text no longer counts, and capitals or entities no longer hide one.
 
+### For newcomers
+
+- The READMEs, in French and in English, start with what to install and check, how to open
+  PowerShell and where the project goes, and add "The next times" and "Common problems". On
+  Windows they write `npm.cmd`, `npx.cmd` (PowerShell often blocks `npm` and `npx`) and `py -3`.
+  The Mistral key is described without naming a plan. Tocsin is no longer a provisional name.
+- When a source does not answer, the collector adds a plain hint after the technical error: check
+  your Internet connection, a firewall or a proxy.
+- A fifth job of the CI runs the tests of the collector with the latest stable Python.
+
 ### En français
 
 - Les vérifications du site lisent le `index.html` construit avec le parseur HTML du navigateur,
@@ -23,6 +33,14 @@ The changes of Tocsin, newest first. Versions follow [Semantic Versioning](https
 - Le collecteur lit les liens cve.org des pages du CERT-FR avec un parseur HTML : un lien en
   commentaire, dans un script ou en simple texte ne compte plus, et ni les capitales ni les entités
   ne cachent plus un vrai lien.
+- Les README, en français et en anglais, commencent par ce qu'il faut installer et vérifier,
+  comment ouvrir PowerShell et où va le projet, et ajoutent « Les fois suivantes » et « Problèmes
+  fréquents ». Sous Windows, ils écrivent `npm.cmd`, `npx.cmd` (PowerShell bloque souvent `npm` et
+  `npx`) et `py -3`. La clé Mistral est décrite sans nommer d'offre. Tocsin n'est plus un nom
+  provisoire.
+- Quand une source ne répond pas, le collecteur ajoute après l'erreur technique un conseil simple :
+  vérifiez votre connexion Internet, un pare-feu ou un proxy.
+- Un cinquième job de la CI lance les tests du collecteur avec la dernière version stable de Python.
 
 ## [1.0.0](https://github.com/Puchopuch/tocsin/releases/tag/v1.0.0) (2026-11-21)
 

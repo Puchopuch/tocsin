@@ -341,7 +341,7 @@ class Fetcher:
                 if received > limit:
                     raise SourceError(too_big)
                 if self._clock() > deadline:
-                    raise SourceError(f"{address.host} : plus de {config.TOTAL_SECONDS:.0f} s, abandon")
+                    raise SourceError(f"{address.host} : plus de {config.TOTAL_SECONDS:.0f} s, abandon ; {NO_ANSWER}")
                 if inflate is None:
                     body += chunk
                 # The output of each step is capped, so that the rest waits in unconsumed_tail.
@@ -361,8 +361,16 @@ class Fetcher:
         return bytes(body)
 
 
+# What anybody can check when a source does not answer: said after the technical error.
+NO_ANSWER = "vérifiez votre connexion Internet, un pare-feu ou un proxy"
+
+
 def why(error: httpx.HTTPError) -> str:
-    """The kind of error only: its details could repeat the request and its headers."""
+    """The kind of error only: its details could repeat the request and its headers. When the source
+    does not answer at all (no connection, too long, network or proxy error), a plain hint follows;
+    not for an address refused here, nor for an answer in error."""
     if isinstance(error.__cause__, BlockedAddress):
         return "adresse non publique, refusée"
+    if isinstance(error, (httpx.TimeoutException, httpx.NetworkError, httpx.ProxyError)):
+        return f"{type(error).__name__} ; {NO_ANSWER}"
     return type(error).__name__

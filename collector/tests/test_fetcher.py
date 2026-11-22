@@ -83,3 +83,24 @@ def test_network_errors_never_repeat_the_key():
             fetcher.get(API, key=fake_key())
     assert FAKE_KEY not in str(caught.value)
     assert caught.value.__cause__ is None and caught.value.__suppress_context__
+
+
+HINT = "vérifiez votre connexion Internet, un pare-feu ou un proxy"
+
+
+@pytest.mark.parametrize("failure", [httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout, httpx.ReadError, httpx.ProxyError])
+def test_a_source_that_does_not_answer_comes_with_a_plain_hint(failure):
+    def fail(request: httpx.Request) -> httpx.Response:
+        raise failure("no answer", request=request)
+
+    with Fetcher(transport=httpx.MockTransport(fail), sleep=lambda seconds: None) as fetcher:
+        with pytest.raises(SourceError) as caught:
+            fetcher.get(CISA)
+    assert str(caught.value) == f"www.cisa.gov : {failure.__name__} ; {HINT}"
+
+
+def test_a_source_that_answers_with_an_error_gets_no_network_hint():
+    with Fetcher(transport=answer(503, b"busy"), sleep=lambda seconds: None) as fetcher:
+        with pytest.raises(SourceError) as caught:
+            fetcher.get(CISA)
+    assert str(caught.value) == "www.cisa.gov : HTTP 503"
