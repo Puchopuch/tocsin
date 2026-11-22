@@ -4,7 +4,7 @@ A public information service, in French and in English, about the cyberattacks t
 general public and businesses: calm and clear, neither a security dashboard nor a "hacker" look. It quotes
 CERT-FR and other sources but must never look official (no Marianne font, no blue-white-red).
 
-**Tocsin** is a provisional name. It lives in one constant, `APP_NAME` in `src/config.js`;
+The name **Tocsin** lives in one constant, `APP_NAME` in `src/config.js`;
 `vite.config.js` also writes it into the page title.
 
 The site only reads `data/cards.json`, written by the collector (`collector/` at the root of the

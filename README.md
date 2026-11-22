@@ -2,10 +2,9 @@
 
 *[Version française : README.fr.md](README.fr.md)*
 
-A public information service, in French and in English, about the cyberattacks that touch the
-general public and businesses. Everything on the site is real: real flaws and attacks, read from
-reliable sources by a collector, each card with its sources. **Tocsin** is a provisional name
-(`APP_NAME` in `frontend/src/config.js`).
+A free and open information service, in French and in English, about the cyberattacks that touch
+the general public and businesses. Everything on the site is real: real flaws and attacks, read
+from reliable sources by a collector, each card with its sources.
 
 ![Tocsin, in English: the real cards of a collection](screenshots/tocsin-en.png)
 
@@ -23,22 +22,54 @@ AI; ransomware.live, for the ransomware claims against organisations in France.
 > real Mistral or the real ransomware.live: each user brings their own keys. Report anything that
 > goes wrong with them (see [SECURITY.md](SECURITY.md) for a security problem).
 
+## Before you start
+
+**Install three tools**, with their default options:
+
+- [Git](https://git-scm.com/downloads);
+- [Python 3.12 or newer](https://www.python.org/downloads/). On Windows, on the first screen of
+  the installer, **tick "Add python.exe to PATH"** before clicking "Install Now";
+- [Node.js](https://nodejs.org/), the LTS version (20.19 or newer).
+
+**Open PowerShell** (Windows): Start menu, type "PowerShell", then open "Windows PowerShell"; on
+Windows 11, "Terminal" opens PowerShell too. No need to run it as administrator. On Linux and
+macOS, open a terminal.
+
+**The folder of the project**: PowerShell opens in your personal folder, which PowerShell calls
+`$HOME`. The project will be created there, in a folder named `tocsin`: `$HOME\tocsin`. Avoid the
+Desktop and Documents if OneDrive syncs them: thousands of installed files would be uploaded.
+
+**Check the installations**: each command must print a version, Python 3.12 or newer and Node.js
+v20.19 or newer. If one answers "… is not recognized …", see [Common problems](#common-problems).
+
+```powershell
+git --version
+py --version
+node --version
+```
+
+(`python3 --version` instead of `py --version` on Linux and macOS.)
+
+**`npm.cmd` and `npx.cmd`**: on Windows, this README writes `npm.cmd` and `npx.cmd` instead of
+`npm` and `npx`. PowerShell often refuses to run these two commands ("running scripts is disabled
+on this system"), because it finds them first as PowerShell scripts; the `.cmd` versions do
+exactly the same, without that block.
+
 ## Quick start, without any key
 
-You need [Git](https://git-scm.com/), [Python 3.12 or newer](https://www.python.org/downloads/) and
-[Node.js 20.19 or newer](https://nodejs.org/).
+Type these commands one at a time, waiting for each one to finish.
 
 **Windows (PowerShell)**
 
 ```powershell
 git clone https://github.com/Puchopuch/tocsin.git
 cd tocsin
-py -3.12 -m venv .venv
+py -3 -m venv .venv
 .venv\Scripts\python -m pip install -r requirements-dev.txt
 .venv\Scripts\python -m collector run
 cd frontend
-npm ci
-npm run dev
+npm.cmd ci
+npm.cmd run dev
 ```
 
 **Linux and macOS**
@@ -54,8 +85,53 @@ npm ci
 npm run dev
 ```
 
-Then open <http://127.0.0.1:5173>: the cards of the last seven days, from the CISA and the
-CERT-FR. The dev server answers this computer only, never the local network. Stop it with Ctrl+C.
+Then open <http://127.0.0.1:5173> (or the address shown after `Local:`): the cards of the last
+seven days, from the CISA and the CERT-FR. The dev server answers this computer only, never the
+local network. Stop it with Ctrl+C.
+
+## The next times
+
+Open PowerShell, collect, then start the site:
+
+```powershell
+cd $HOME\tocsin
+.venv\Scripts\python -m collector run
+cd frontend
+npm.cmd run dev
+```
+
+On Linux and macOS: `cd ~/tocsin`, `.venv/bin/python -m collector run`, `cd frontend`,
+`npm run dev`.
+
+The collection runs **at the root** of the project (the `tocsin` folder), the site **in its
+`frontend` subfolder**: from `frontend`, `cd ..` goes back to the root. After an update of the
+project (`git pull`), run both installations again:
+`.venv\Scripts\python -m pip install -r requirements-dev.txt` at the root, `npm.cmd ci` in
+`frontend`.
+
+## Common problems
+
+- **`npm` or `npx` refused** ("File …\npm.ps1 cannot be loaded because running scripts is disabled
+  on this system"): type `npm.cmd` or `npx.cmd`, as everywhere in this README.
+- **`py`, `python`, `git` or `node` "is not recognized"**: the tool is not installed, or PowerShell
+  was already open during the installation: close it and open it again. If `py` is still missing,
+  run the Python installer again, choose "Modify", check that "py launcher" is ticked, then tick
+  "Add Python to environment variables" on the next screen.
+- **Ubuntu: "ensurepip is not available"** when creating `.venv`: install the missing module
+  (`sudo apt install python3-venv`), delete the half-made `.venv` folder (`rm -rf .venv`), then
+  start again.
+- **macOS: `python3 --version` shows a version older than 3.12** (the one of Apple's tools):
+  install Python from [python.org](https://www.python.org/downloads/) or with Homebrew
+  (`brew install python@3.12`), then create `.venv` with `python3.12 -m venv .venv`.
+- **Port 5173 is already in use**: the site takes the next one and shows it after `Local:` (for
+  instance <http://127.0.0.1:5174>); open that address.
+- **The summary says "échec, … ConnectError"** (or `ConnectTimeout`, `ReadTimeout`): the source did
+  not answer. Check your Internet connection, a firewall (it must let Python out) or a proxy: the
+  collector uses no proxy, on purpose; on a network that requires one (company, school), collect
+  from another connection.
+- **The site is empty after a failed collection** ("No attack recorded at the moment"): the first
+  collection failed before writing any card. Read its summary, fix the cause, run the collection
+  again, then reload the page. A source that fails never erases the cards already written.
 
 ## Keys, step by step
 
@@ -69,11 +145,13 @@ which Git ignores.
 
 ### 1. Create the keys
 
-- **Mistral**: on <https://console.mistral.ai>, sign in, open **API Keys**, then **Create new key**.
-  Copy the key at once: it is shown only once. The free plan ("Experiment") asks for a phone
-  number, not a bank card. **On the free plan, Mistral may use your requests to train its
-  models**: the collector sends it only public press articles and public CISA texts, never
-  anything private. Do not use this key for private data. Read Mistral's current terms before.
+- **Mistral**: on <https://console.mistral.ai>, create an account or sign in. The console changes
+  often, and so do its plans. If it offers you a subscription, look instead for the option that
+  turns on API access on the free plan. Then set a spending limit of 0, so that no call can ever
+  be billed. Finally, create the key, in the section of API keys, and copy it at once: it is shown
+  only once. **On the free plan, Mistral may use your requests to train its models**: the
+  collector sends it only public press articles and public CISA texts, never anything private. Do
+  not use this key for private data. Read Mistral's current terms before.
 - **ransomware.live**: on <https://my.ransomware.live>, create an account, then generate your
   token for the PRO API. When this was written, the PRO API was free, with 3,000 calls a day; a
   collection makes one or two. Read their current terms before.
@@ -130,7 +208,7 @@ and the other sources still update the site.
   paste a key in an issue, a pull request, a chat or a screenshot.
 - The collector never prints, logs or stores a key: it holds it as a secret value, sends it only
   to its own API, never through a redirect.
-- **If a key leaks**: delete it at once where you created it (Mistral console, **API Keys**;
+- **If a key leaks**: delete it at once where you created it (Mistral console;
   my.ransomware.live), create a new one, put it in `.env`, and run `check-sources`.
 
 ## Commands
@@ -283,7 +361,8 @@ key, nothing about you or your computer.
 - **Tests**: `collector/tests/test_network.py`, `test_inputs.py`, `test_secrets_resilience.py`,
   `test_phase2.py`, and the security checks of `npm run check`.
 - **On every push** (GitHub Actions, `.github/workflows/ci.yml`), without any key or secret and
-  with read-only rights: pytest, `npm run check`, gitleaks on the whole history, pip-audit,
+  with read-only rights: pytest, with Python 3.12 and with the latest stable Python,
+  `npm run check`, gitleaks on the whole history, pip-audit,
   `npm audit` and Bandit. The actions are pinned by commit. Each week, Dependabot proposes one
   pull request for all the pip updates, one for all the npm updates, and the updates of the
   actions, once the versions are 14 days old; security fixes at once.
@@ -295,8 +374,8 @@ To report a security problem, see [SECURITY.md](SECURITY.md): privately, never i
 ```powershell
 .venv\Scripts\python -m pytest
 cd frontend
-npx playwright install chromium   # once
-npm run check
+npx.cmd playwright install chromium   # once
+npm.cmd run check
 ```
 
 The tests never reach the network nor a DNS server, and never touch your `.env`, `state.db`,
@@ -313,7 +392,7 @@ The audits of the CI, by hand (on Linux and macOS, `.venv/bin/python`):
 .venv\Scripts\python -m pip_audit --strict --no-deps --disable-pip -r requirements.txt -r requirements-dev.txt -r requirements-audit.txt
 .venv\Scripts\python -m bandit -r collector -x collector/tests
 cd frontend
-npm audit --audit-level=high
+npm.cmd audit --audit-level=high
 ```
 
 ## Limits

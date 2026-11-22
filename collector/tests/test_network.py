@@ -273,7 +273,7 @@ def test_a_timeout_is_a_clean_failure():
         raise httpx.ReadTimeout("timed out", request=request)
 
     with Fetcher(transport=httpx.MockTransport(slow), sleep=lambda seconds: None) as fetcher:
-        with pytest.raises(SourceError, match=r"^www\.cisa\.gov : ReadTimeout$"):
+        with pytest.raises(SourceError, match=r"^www\.cisa\.gov : ReadTimeout ; vérifiez votre connexion Internet, un pare-feu ou un proxy$"):
             fetcher.get(CISA)
 
 
@@ -288,7 +288,7 @@ def test_a_body_that_trickles_in_is_abandoned_after_60_seconds():
 
     transport = httpx.MockTransport(lambda request: httpx.Response(200, stream=Trickle()))
     with Fetcher(transport=transport, clock=lambda: now[0], sleep=lambda seconds: None) as fetcher:
-        with pytest.raises(SourceError, match="plus de 60 s"):
+        with pytest.raises(SourceError, match="plus de 60 s, abandon ; vérifiez votre connexion Internet"):
             fetcher.get(CISA)
     assert now[0] <= 100
 
